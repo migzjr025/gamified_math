@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --color-ink: #0f172a;
+  --color-paper: #f8fafc;
+  --color-violet-soft: #ede9fe;
+  --color-violet-deep: #6d28d9;
+  --color-amber-soft: #fef3c7;
+  --color-amber-deep: #d97706;
+  --color-teal-soft: #ccfbf1;
+  --color-teal-deep: #0d9488;
+  --color-rose-soft: #ffe4e6;
+  --color-rose-deep: #e11d48;
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-sans); }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-fade-up { animation: fadeUp 0.35s ease-out both; }
+.animate-delay-1 { animation-delay: 0.05s; }
+.animate-delay-2 { animation-delay: 0.1s; }
+.animate-delay-3 { animation-delay: 0.15s; }
+.animate-delay-4 { animation-delay: 0.2s; }
+
+.glass-card {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.glass-card-solid {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(0,0,0,0.06);
+  backdrop-filter: blur(16px);
+}
+
+::-webkit-scrollbar { width: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
