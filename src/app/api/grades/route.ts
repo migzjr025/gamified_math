@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
-import { grades, students, assessments } from "@/db/schema";
+import { grades, students, assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
@@ -22,11 +22,14 @@ export async function GET() {
         createdAt: grades.createdAt,
         updatedAt: grades.updatedAt,
         studentName: students.fullName,
+        studentNumber: students.studentId,
         assessmentTitle: assessments.title,
+        quarter: units.quarter,
       })
       .from(grades)
       .leftJoin(students, eq(grades.studentId, students.id))
-      .leftJoin(assessments, eq(grades.assessmentId, assessments.id));
+      .leftJoin(assessments, eq(grades.assessmentId, assessments.id))
+      .leftJoin(units, eq(assessments.unitId, units.id));
 
     const data = isAdmin
       ? await query

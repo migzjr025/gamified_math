@@ -2,8 +2,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Users, BookOpen, ClipboardCheck, Trophy, Settings,
-  LogOut, Menu, Zap, Star, BrainCircuit, Gamepad2, UserCircle, ShieldCheck
+  LayoutDashboard, Users, BookOpen, Trophy, Settings,
+  LogOut, Menu, Zap, Star, BrainCircuit, UserCircle, ShieldCheck
 } from "lucide-react";
 import { useState } from "react";
 
@@ -23,7 +23,6 @@ export default function SidebarNav({ userName = "Arminda Villeno", role = "teach
   const nav = isStudent
     ? [
         { label: "Quest Dashboard", href: "/dashboard", icon: LayoutDashboard },
-        { label: "Play Game", href: "/game", icon: Gamepad2 },
         { label: "My Grades", href: "/grades", icon: Zap },
         { label: "Achievements", href: "/achievements", icon: Trophy },
         { label: "Settings", href: "/settings", icon: Settings },
@@ -34,9 +33,7 @@ export default function SidebarNav({ userName = "Arminda Villeno", role = "teach
         { label: "User Management", href: "/admin/users", icon: ShieldCheck },
         { label: "Students", href: "/students", icon: Users },
         { label: "Units", href: "/units", icon: BookOpen },
-        { label: "Assessments", href: "/assessments", icon: ClipboardCheck },
         { label: "Questions", href: "/questions", icon: BrainCircuit },
-        { label: "Game", href: "/game", icon: Gamepad2 },
         { label: "Grades", href: "/grades", icon: Zap },
         { label: "Achievements", href: "/achievements", icon: Trophy },
         { label: "Settings", href: "/settings", icon: Settings },
@@ -45,9 +42,7 @@ export default function SidebarNav({ userName = "Arminda Villeno", role = "teach
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "Students", href: "/students", icon: Users },
         { label: "Units", href: "/units", icon: BookOpen },
-        { label: "Assessments", href: "/assessments", icon: ClipboardCheck },
         { label: "Questions", href: "/questions", icon: BrainCircuit },
-        { label: "Game", href: "/game", icon: Gamepad2 },
         { label: "Grades", href: "/grades", icon: Zap },
         { label: "Achievements", href: "/achievements", icon: Trophy },
         { label: "Settings", href: "/settings", icon: Settings },

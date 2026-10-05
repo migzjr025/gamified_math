@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, ChangeEvent } from "react";
-import { Plus, Trash2, Pencil, Search, Users, Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Pencil, Search, Users, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 import SidebarNav from "@/components/SidebarNav";
 
@@ -8,6 +8,7 @@ interface Student {
   id: number;
   studentId: string;
   fullName: string;
+  age: number | null;
   gradeLevel: string;
   section: string;
   gender: string;
@@ -17,6 +18,7 @@ interface Student {
 const DEFAULT_FORM = {
   studentId: "",
   fullName: "",
+  age: "",
   gradeLevel: "Grade 2",
   section: "A",
   gender: "Male",
@@ -32,15 +34,18 @@ function buildStudentFromRow(row: Record<string, any>): Partial<Student> | null 
 
   const studentId = String(entries.studentid ?? entries.student_id ?? entries.id ?? entries.learnerid ?? entries.studentnumber ?? "").trim();
   const fullName = String(entries.fullname ?? entries.full_name ?? entries.studentname ?? entries.name ?? entries.learnername ?? "").trim();
+  const ageValue = String(entries.age ?? entries.studentage ?? "").trim();
+  const parsedAge = ageValue ? Number(ageValue) : null;
+  const age = parsedAge !== null && Number.isInteger(parsedAge) && parsedAge >= 0 ? parsedAge : null;
   const gradeLevel = String(entries.gradelevel ?? entries.grade_level ?? entries.grade ?? "Grade 2").trim() || "Grade 2";
   const section = String(entries.section ?? entries.classsection ?? "A").trim() || "A";
   const genderRaw = String(entries.gender ?? entries.sex ?? "Other").trim();
   const gender = ["male", "female", "other"].includes(genderRaw.toLowerCase()) ? genderRaw.charAt(0).toUpperCase() + genderRaw.slice(1).toLowerCase() : genderRaw || "Other";
   const avatarColor = String(entries.avatarcolor ?? entries.avatar_color ?? entries.color ?? "#6366f1").trim() || "#6366f1";
 
-  if (!studentId || !fullName) return null;
+  if (!fullName) return null;
 
-  return { studentId, fullName, gradeLevel, section, gender, avatarColor };
+  return { studentId, fullName, age, gradeLevel, section, gender, avatarColor };
 }
 
 export default function StudentsClient({ userName, role }: { userName: string; role?: string }) {
@@ -51,6 +56,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
   const [edit, setEdit] = useState<Student | null>(null);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [importLoading, setImportLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [importMessage, setImportMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   async function load() {
@@ -81,6 +87,81 @@ export default function StudentsClient({ userName, role }: { userName: string; r
     load();
   }
 
+  async function exportExcel() {
+    try {
+      setExportLoading(true);
+      const response = await fetch("/api/grades");
+      if (!response.ok) throw new Error("Could not load grades");
+      const gradeRows: Array<{
+        studentId: number;
+        studentName: string | null;
+        studentNumber: string | null;
+        assessmentTitle: string | null;
+        score: number;
+        feedback: string | null;
+        quarter: string | null;
+      }> = await response.json();
+      const quarters = ["Quarter 1", "Quarter 2", "Quarter 3", "Quarter 4"];
+      const quarterScores = new Map<number, Map<string, number[]>>();
+
+      for (const grade of gradeRows) {
+        const quarter = quarters.find((label) => label.toLowerCase() === (grade.quarter || "").trim().toLowerCase());
+        if (!quarter) continue;
+        const byQuarter = quarterScores.get(grade.studentId) ?? new Map<string, number[]>();
+        const scores = byQuarter.get(quarter) ?? [];
+        scores.push(Number(grade.score));
+        byQuarter.set(quarter, scores);
+        quarterScores.set(grade.studentId, byQuarter);
+      }
+
+      const summaryRows = items.map((student) => {
+        const scores = quarterScores.get(student.id);
+        return {
+          Name: student.fullName,
+          Age: student.age ?? "",
+          Gender: student.gender,
+          Grade: student.gradeLevel,
+          Section: student.section,
+          "Student ID": student.studentId,
+          ...Object.fromEntries(quarters.map((quarter) => {
+            const values = scores?.get(quarter) ?? [];
+            const average = values.length ? values.reduce((sum, score) => sum + score, 0) / values.length : null;
+            return [`${quarter} Score (%)`, average === null ? "" : Number(average.toFixed(2))];
+          })),
+        };
+      });
+      const reportRows = gradeRows.map((grade) => {
+        const student = items.find((item) => item.id === grade.studentId);
+        return {
+          Name: grade.studentName ?? student?.fullName ?? "",
+          "Student ID": grade.studentNumber ?? student?.studentId ?? "",
+          Age: student?.age ?? "",
+          Gender: student?.gender ?? "",
+          Grade: student?.gradeLevel ?? "",
+          Section: student?.section ?? "",
+          Quarter: grade.quarter ?? "",
+          Assessment: grade.assessmentTitle ?? "",
+          "Score (%)": grade.score,
+          Feedback: grade.feedback ?? "",
+        };
+      });
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows, {
+        header: ["Name", "Age", "Gender", "Grade", "Section", "Student ID", ...quarters.map((quarter) => `${quarter} Score (%)`)],
+      }), "Student Summary");
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(reportRows, {
+        header: ["Name", "Student ID", "Age", "Gender", "Grade", "Section", "Quarter", "Assessment", "Score (%)", "Feedback"],
+      }), "Quarterly Report");
+      XLSX.writeFile(workbook, "student-quarterly-report.xlsx");
+    } catch (error) {
+      console.error("Excel export failed", error);
+      setImportMessage({ type: "error", text: "The student report could not be exported. Please try again." });
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
   async function handleExcelImport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -107,7 +188,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         .filter((student): student is Partial<Student> => Boolean(student));
 
       if (!parsedStudents.length) {
-        setImportMessage({ type: "error", text: "No valid student rows were found. Use columns like Student ID, Full Name, Grade Level, Section, Gender." });
+        setImportMessage({ type: "error", text: "No valid student rows were found. Include a Name column; Age, Gender, Grade, and Section are also supported. Student IDs are optional." });
         setImportLoading(false);
         event.target.value = "";
         return;
@@ -123,6 +204,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           body: JSON.stringify({
             studentId: student.studentId,
             fullName: student.fullName,
+            age: student.age,
             gradeLevel: student.gradeLevel || "Grade 2",
             section: student.section || "A",
             gender: student.gender || "Other",
@@ -169,6 +251,9 @@ export default function StudentsClient({ userName, role }: { userName: string; r
               <p className="text-slate-400 mt-1">Manage learner profiles and progress.</p>
             </div>
             <div className="flex flex-wrap gap-3">
+              <button onClick={exportExcel} disabled={exportLoading || loading} className="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-emerald-400/40 bg-emerald-500/10 text-emerald-100 font-bold hover:bg-emerald-500/20 transition disabled:opacity-50">
+                <Download size={18} /> {exportLoading ? "Exporting..." : "Export Excel"}
+              </button>
               <label className="inline-flex cursor-pointer items-center gap-2 px-5 py-3 rounded-xl border border-violet-400/40 bg-violet-500/10 text-violet-100 font-bold shadow-xl shadow-violet-900/20 hover:bg-violet-500/20 transition">
                 <Upload size={18} />
                 {importLoading ? "Importing..." : "Import Excel"}
@@ -222,7 +307,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                       {s.fullName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setForm({ ...s }); setEdit(s); setOpen(true); }} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200" aria-label="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => { setForm({ ...s, age: s.age?.toString() ?? "" }); setEdit(s); setOpen(true); }} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200" aria-label="Edit"><Pencil size={14} /></button>
                       <button onClick={() => remove(s.id)} className="p-2 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300" aria-label="Delete"><Trash2 size={14} /></button>
                     </div>
                   </div>
@@ -230,6 +315,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                   <p className="text-xs text-violet-300 font-semibold mb-2">{s.studentId} · {s.gradeLevel} · {s.section}</p>
                   <div className="flex items-center gap-3 text-xs text-slate-400">
                     <span className="bg-white/5 px-2 py-0.5 rounded-md">{s.gender}</span>
+                    {s.age !== null && <span className="text-slate-500">Age {s.age}</span>}
                   </div>
                 </div>
               ))}
@@ -243,6 +329,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                 <div className="space-y-3">
                   <input value={form.studentId} onChange={e => setForm({ ...form, studentId: e.target.value })} placeholder="Student ID" className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" />
                   <input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} placeholder="Full Name" className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" />
+                  <input type="number" min="0" step="1" value={form.age} onChange={e => setForm({ ...form, age: e.target.value })} placeholder="Age (optional)" className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" />
                   <div className="grid grid-cols-2 gap-3">
                     <select value={form.gradeLevel} onChange={e => setForm({ ...form, gradeLevel: e.target.value })} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40">
                       {["Grade 2","Grade 3","Grade 4","Grade 5"].map(g => <option key={g} value={g} className="bg-slate-900">{g}</option>)}

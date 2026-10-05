@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { students } from "@/db/schema";
@@ -26,9 +27,21 @@ export async function POST(req: NextRequest) {
     const sessionUser = await getSessionUser();
     const userId = sessionUser?.id || 1;
     const body = await req.json();
+    const fullName = String(body.fullName || "").trim();
+    const age = body.age === null || body.age === undefined || body.age === "" ? null : Number(body.age);
+
+    if (!fullName) {
+      return NextResponse.json({ error: "Student name is required." }, { status: 400 });
+    }
+    if (age !== null && (!Number.isInteger(age) || age < 0)) {
+      return NextResponse.json({ error: "Age must be a non-negative whole number." }, { status: 400 });
+    }
 
     const result = await db.insert(students).values({
       ...body,
+      studentId: String(body.studentId || `STU-${randomUUID()}`).trim(),
+      fullName,
+      age,
       userId,
     }).returning();
 
@@ -46,6 +59,13 @@ export async function PUT(req: NextRequest) {
     const isAdmin = sessionUser?.role === "admin";
     const body = await req.json();
     const { id, ...rest } = body;
+    if ("age" in rest) {
+      const age = rest.age === null || rest.age === undefined || rest.age === "" ? null : Number(rest.age);
+      if (age !== null && (!Number.isInteger(age) || age < 0)) {
+        return NextResponse.json({ error: "Age must be a non-negative whole number." }, { status: 400 });
+      }
+      rest.age = age;
+    }
 
     const whereClause = isAdmin
       ? eq(students.id, id)
