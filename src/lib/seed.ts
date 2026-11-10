@@ -12,6 +12,7 @@ export async function seedData() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS approved boolean DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login_completed boolean DEFAULT false;
+      UPDATE students SET user_id = 1 WHERE user_id IS NULL;
     `);
   } catch (migErr) {
     console.warn("Auto-migration schema patch handled:", migErr);

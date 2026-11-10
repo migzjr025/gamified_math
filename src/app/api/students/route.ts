@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { students, gameResults, grades, studentAchievements } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -77,11 +77,15 @@ export async function GET(req: NextRequest) {
   try {
     const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
-    const isAdmin = sessionUser?.role === "admin";
+    const isTeacher = sessionUser && sessionUser.role === "teacher" && !(sessionUser as any).isGameClient;
 
-    const data = isAdmin
-      ? await db.select().from(students)
-      : await db.select().from(students).where(eq(students.userId, userId));
+    const data = isTeacher
+      ? await db
+          .select()
+          .from(students)
+          .where(or(eq(students.userId, userId), isNull(students.userId)))
+          .orderBy(students.id)
+      : await db.select().from(students).orderBy(students.id);
 
     const enriched = data.map((s, idx) => ({
       ...s,
@@ -89,11 +93,18 @@ export async function GET(req: NextRequest) {
       age: s.age ?? computeAge(s.birthday),
     }));
 
-    // Auto-migrate legacy IDs in the database so they persist permanently
+    // Auto-migrate legacy IDs and unassigned userIds in the database so they persist permanently
     for (const s of data) {
       const normalized = normalizeStudentId(s.studentId);
+      const updates: any = {};
       if (normalized !== s.studentId) {
-        db.update(students).set({ studentId: normalized }).where(eq(students.id, s.id)).catch(() => {});
+        updates.studentId = normalized;
+      }
+      if (s.userId === null || s.userId === undefined) {
+        updates.userId = 1;
+      }
+      if (Object.keys(updates).length > 0) {
+        db.update(students).set(updates).where(eq(students.id, s.id)).catch(() => {});
       }
     }
 

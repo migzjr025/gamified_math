@@ -8,7 +8,7 @@ export async function GET(req?: NextRequest) {
   try {
     const sessionUser = req ? await getSessionUser(req) : await getSessionUser();
     const userId = sessionUser?.id || 1;
-    const isAdmin = sessionUser?.role === "admin";
+    const isTeacher = sessionUser && sessionUser.role === "teacher" && !(sessionUser as any).isGameClient;
 
     const query = db
       .select({
@@ -29,9 +29,9 @@ export async function GET(req?: NextRequest) {
       .innerJoin(students, eq(gameResults.studentId, students.id))
       .orderBy(gameResults.id);
 
-    const data = isAdmin
-      ? await query
-      : await query.where(eq(gameResults.userId, userId));
+    const data = isTeacher
+      ? await query.where(eq(gameResults.userId, userId))
+      : await query;
 
     return NextResponse.json(data);
   } catch (error) {
@@ -50,10 +50,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const sessionUser = await getSessionUser(req);
-    const userId = sessionUser?.id || 1;
-
-    const studentId = Number(body.studentId);
-    if (!Number.isFinite(studentId) || studentId <= 0) {
+    const rawStudentId = Number(body.studentId);
+    if (!Number.isFinite(rawStudentId) || rawStudentId <= 0) {
       return NextResponse.json({ error: "A valid positive studentId is required." }, { status: 400 });
     }
 
@@ -61,6 +59,35 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(assessmentId) || assessmentId <= 0) {
       return NextResponse.json({ error: "A valid positive assessmentId is required." }, { status: 400 });
     }
+
+    // Resolve student record to ensure valid foreign key in PostgreSQL
+    let targetStudent = await db
+      .select({ id: students.id, userId: students.userId, studentId: students.studentId })
+      .from(students)
+      .where(eq(students.id, rawStudentId))
+      .limit(1);
+
+    if (targetStudent.length === 0) {
+      const studentCode = String(body.studentCode || body.student_id || body.studentNumber || "");
+      if (studentCode) {
+        targetStudent = await db
+          .select({ id: students.id, userId: students.userId, studentId: students.studentId })
+          .from(students)
+          .where(eq(students.studentId, studentCode))
+          .limit(1);
+      }
+      if (targetStudent.length === 0 && rawStudentId <= 20) {
+        const paddedCode = `2026-${String(rawStudentId).padStart(3, "0")}`;
+        targetStudent = await db
+          .select({ id: students.id, userId: students.userId, studentId: students.studentId })
+          .from(students)
+          .where(eq(students.studentId, paddedCode))
+          .limit(1);
+      }
+    }
+
+    const resolvedStudentId = targetStudent.length > 0 ? targetStudent[0].id : rawStudentId;
+    const effectiveUserId = targetStudent[0]?.userId || sessionUser?.id || 1;
 
     const totalQuestions = Number.isFinite(Number(body.totalQuestions)) ? Math.max(0, Number(body.totalQuestions)) : 5;
     const correctAnswers = Number.isFinite(Number(body.correctAnswers)) ? Math.max(0, Number(body.correctAnswers)) : 0;
@@ -70,8 +97,8 @@ export async function POST(req: NextRequest) {
       : totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
 
     const payload = {
-      userId,
-      studentId,
+      userId: effectiveUserId,
+      studentId: resolvedStudentId,
       assessmentId,
       gradeLevel: String(body.gradeLevel || "Grade 2"),
       score,
