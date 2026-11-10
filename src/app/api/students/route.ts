@@ -147,7 +147,18 @@ export async function POST(req: NextRequest) {
       }).returning();
 
       return NextResponse.json(result[0]);
-    } catch (dbErr) {
+    } catch (dbErr: any) {
+      if (dbErr?.code === "23505" || String(dbErr?.message || "").toLowerCase().includes("unique")) {
+        return NextResponse.json({
+          error: `Student ID "${studentId}" is already registered.`,
+        }, { status: 409 });
+      }
+      // Demo / offline fallback check
+      if (DEMO_STUDENTS.some((s) => s.studentId === studentId)) {
+        return NextResponse.json({
+          error: `Student ID "${studentId}" is already registered.`,
+        }, { status: 409 });
+      }
       console.warn("Students DB offline during create, returning simulated saved student");
       return NextResponse.json({
         id: Date.now(),
@@ -191,7 +202,18 @@ export async function PUT(req: NextRequest) {
             error: `Student ID "${rest.studentId}" is already assigned to another student.`,
           }, { status: 409 });
         }
-      } catch {}
+      } catch (checkErr: any) {
+        if (checkErr?.code === "23505" || String(checkErr?.message || "").toLowerCase().includes("unique")) {
+          return NextResponse.json({
+            error: `Student ID "${rest.studentId}" is already assigned to another student.`,
+          }, { status: 409 });
+        }
+        if (DEMO_STUDENTS.some((s) => s.studentId === rest.studentId && s.id !== id)) {
+          return NextResponse.json({
+            error: `Student ID "${rest.studentId}" is already assigned to another student.`,
+          }, { status: 409 });
+        }
+      }
     }
 
     if (rest.birthday !== undefined) {
@@ -216,7 +238,12 @@ export async function PUT(req: NextRequest) {
     try {
       const result = await db.update(students).set(rest).where(whereClause).returning();
       return NextResponse.json(result[0] || { id, ...rest });
-    } catch {
+    } catch (dbErr: any) {
+      if (dbErr?.code === "23505" || String(dbErr?.message || "").toLowerCase().includes("unique")) {
+        return NextResponse.json({
+          error: `Student ID "${rest.studentId}" is already assigned to another student.`,
+        }, { status: 409 });
+      }
       console.warn("Students DB offline during update, returning simulated updated student");
       return NextResponse.json({ id, ...rest });
     }

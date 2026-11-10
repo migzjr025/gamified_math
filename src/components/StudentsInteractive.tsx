@@ -665,36 +665,53 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                 )}
                 <div className="space-y-3">
                   <div>
-                    <div className="flex items-center justify-between px-1 mb-1">
-                      <label className="block text-xs font-medium text-slate-400">Student ID</label>
-                      <span className={`text-[11px] font-mono font-medium ${
-                        form.studentId && !STUDENT_ID_REGEX.test(form.studentId.trim())
-                          ? "text-rose-400"
-                          : "text-violet-300"
-                      }`}>
-                        Format: 2026-001
-                      </span>
-                    </div>
-                    <input
-                      value={form.studentId}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setForm({ ...form, studentId: val });
-                        if (formError) setFormError("");
-                      }}
-                      placeholder="e.g. 2026-001"
-                      className={`w-full px-4 py-3 rounded-xl bg-white/5 border text-sm font-mono focus:outline-none focus:ring-2 transition ${
-                        form.studentId && !STUDENT_ID_REGEX.test(form.studentId.trim())
-                          ? "border-rose-500/60 focus:ring-rose-400/40 text-rose-200"
-                          : "border-white/10 focus:ring-violet-400/40 text-white"
-                      }`}
-                    />
-                    {form.studentId && !STUDENT_ID_REGEX.test(form.studentId.trim()) && (
-                      <p className="mt-1 px-1 text-[11px] text-rose-400 flex items-center gap-1 font-medium">
-                        <AlertCircle size={12} />
-                        Invalid format! Must follow YYYY-001 (e.g. 2026-001)
-                      </p>
-                    )}
+                    {(() => {
+                      const trimmedId = form.studentId.trim();
+                      const isFormatInvalid = Boolean(trimmedId && !STUDENT_ID_REGEX.test(trimmedId));
+                      const duplicateStudent = trimmedId
+                        ? items.find((s) => s.studentId.toLowerCase() === trimmedId.toLowerCase() && (edit ? s.id !== edit.id : true))
+                        : null;
+                      const hasError = isFormatInvalid || Boolean(duplicateStudent);
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 mb-1">
+                            <label className="block text-xs font-medium text-slate-400">Student ID</label>
+                            <span className={`text-[11px] font-mono font-medium ${
+                              hasError ? "text-rose-400" : "text-violet-300"
+                            }`}>
+                              Format: 2026-001
+                            </span>
+                          </div>
+                          <input
+                            value={form.studentId}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setForm({ ...form, studentId: val });
+                              if (formError) setFormError("");
+                            }}
+                            placeholder="e.g. 2026-001"
+                            className={`w-full px-4 py-3 rounded-xl bg-white/5 border text-sm font-mono focus:outline-none focus:ring-2 transition ${
+                              hasError
+                                ? "border-rose-500/60 focus:ring-rose-400/40 text-rose-200"
+                                : "border-white/10 focus:ring-violet-400/40 text-white"
+                            }`}
+                          />
+                          {isFormatInvalid && (
+                            <p className="mt-1 px-1 text-[11px] text-rose-400 flex items-center gap-1 font-medium">
+                              <AlertCircle size={12} />
+                              Invalid format! Must follow YYYY-001 (e.g. 2026-001)
+                            </p>
+                          )}
+                          {!isFormatInvalid && duplicateStudent && (
+                            <p className="mt-1 px-1 text-[11px] text-rose-400 flex items-center gap-1 font-medium">
+                              <AlertCircle size={12} />
+                              Student ID &quot;{trimmedId}&quot; is already assigned to {duplicateStudent.fullName}.
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1 px-1">Full Name</label>
