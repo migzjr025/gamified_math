@@ -15,7 +15,15 @@ import {
   Calendar,
   CheckCircle2,
   GraduationCap,
+  Download,
+  Printer,
+  Filter,
+  RotateCcw,
+  Check,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import SidebarNav from "@/components/SidebarNav";
 
 interface GradeRow {
@@ -53,20 +61,25 @@ interface StudentGroup {
   avatarColor: string;
   grades: GradeRow[];
   averageScore: number;
+  completionCount: number;
+  completionPercent: number;
+}
+
+interface ToastMessage {
+  id: number;
+  text: string;
+  type: "success" | "error" | "info";
 }
 
 function normalizeStudentNumber(raw?: string | null, fallbackId: number = 1): string {
   if (!raw) return `2026-${String(fallbackId).padStart(3, "0")}`;
   let clean = raw.trim();
-  // Strip S- or s- prefix (e.g. S-2024-008 -> 2024-008)
   if (/^s-/i.test(clean)) {
     clean = clean.replace(/^s-/i, "").trim();
   }
-  // Convert 2024-XXX or any YYYY-XXX to 2026-XXX
   if (/^\d{4}-\d{3,}$/.test(clean)) {
     return clean.replace(/^\d{4}-/, "2026-");
   }
-  // Convert raw numbers like "12" to "2026-012"
   if (/^\d{1,3}$/.test(clean)) {
     return `2026-${clean.padStart(3, "0")}`;
   }
@@ -90,12 +103,13 @@ function getQuarterOrder(title?: string, quarter?: string | number | null): numb
   return 6;
 }
 
-function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string } {
+function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string; toneColor: string } {
   if (score >= 90) {
     return {
       label: `${score}% • Excellent`,
       ratingText: "Outstanding mastery of lesson objectives.",
       badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      toneColor: "#10b981",
     };
   }
   if (score >= 75) {
@@ -103,6 +117,7 @@ function getScoreRating(score: number): { label: string; badgeClass: string; rat
       label: `${score}% • Good`,
       ratingText: "Solid understanding and consistent work.",
       badgeClass: "bg-teal-500/15 text-teal-300 border-teal-500/30",
+      toneColor: "#14b8a6",
     };
   }
   if (score >= 60) {
@@ -110,18 +125,20 @@ function getScoreRating(score: number): { label: string; badgeClass: string; rat
       label: `${score}% • Passing`,
       ratingText: "Passed the assessment requirement.",
       badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      toneColor: "#f59e0b",
     };
   }
   return {
     label: `${score}% • Needs Practice`,
-    ratingText: "Additional practice and support recommended.",
+    ratingText: "Additional practice and teacher guidance needed.",
     badgeClass: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+    toneColor: "#f43f5e",
   };
 }
 
-function formatLaymanFeedback(feedback?: string | null): { preview: string; isGameSummary: boolean; correct?: number; total?: number } {
+function formatLaymanFeedback(feedback?: string | null): { preview: string; isGameSummary: boolean } {
   if (!feedback || !feedback.trim()) {
-    return { preview: "No teacher notes", isGameSummary: false };
+    return { preview: "Evaluated successfully", isGameSummary: false };
   }
   const trimmed = feedback.trim();
   const gameMatch = trimmed.match(/Answered (\d+) of (\d+) questions correctly/i);
@@ -131,8 +148,6 @@ function formatLaymanFeedback(feedback?: string | null): { preview: string; isGa
     return {
       preview: correct === total ? `Perfect (${correct}/${total} correct)` : `${correct} of ${total} correct`,
       isGameSummary: true,
-      correct,
-      total,
     };
   }
 
@@ -161,12 +176,29 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [saving, setSaving] = useState(false);
   const [students, setStudents] = useState<StudentMeta[]>([]);
   const [assessments, setAssessments] = useState<{ id: number; title: string }[]>([]);
+
+  // Search & Filter controls (Feature 3)
   const [q, setQ] = useState("");
+  const [filterGrade, setFilterGrade] = useState("all");
+  const [filterSection, setFilterSection] = useState("all");
+  const [filterRating, setFilterRating] = useState("all");
+
+  // Modals & Action States
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<GradeRow | null>(null);
-
-  // Active student for the "Quarter 1 to Summative" Report Card Modal
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GradeRow | null>(null);
+
+  // In-App Toast System (Feature 5)
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  function showToast(text: string, type: "success" | "error" | "info" = "success") {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, text, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3800);
+  }
 
   const [form, setForm] = useState({
     studentId: 1,
@@ -226,7 +258,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     load();
   }, []);
 
-  // Group grades by student and ONLY include students who have recorded grades!
+  // Group grades strictly for students who have evaluated activities (No 0-grade rows)
   const studentGroups = useMemo<StudentGroup[]>(() => {
     const studentMetaMap = new Map<number, StudentMeta>();
     const studentByName = new Map<string, StudentMeta>();
@@ -235,8 +267,6 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       studentByName.set(s.fullName.trim().toLowerCase(), s);
     });
 
-    // Group grade items using a canonical key (student name or normalized ID)
-    // to prevent any duplicate Sofia Lim rows even if DB has conflicting primary keys.
     const grouped = new Map<string, { meta: Partial<StudentGroup>; grades: GradeRow[] }>();
 
     items.forEach((g) => {
@@ -268,13 +298,11 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       grouped.get(canonicalKey)!.grades.push(g);
     });
 
-    // Build finalized student groups: ONLY students with at least 1 grade!
     const result: StudentGroup[] = [];
 
     grouped.forEach((entry) => {
-      if (entry.grades.length === 0) return; // Strict: only students with grades
+      if (entry.grades.length === 0) return; // Only students with grades
 
-      // Sort grades chronologically from Quarter 1 to Summative
       const sortedGrades = [...entry.grades].sort((a, b) => {
         return getQuarterOrder(a.assessmentTitle, a.quarter) - getQuarterOrder(b.assessmentTitle, b.quarter);
       });
@@ -282,6 +310,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const avg = Math.round(
         sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length
       );
+
+      const count = sortedGrades.length;
+      const percent = Math.min(100, Math.round((count / 4) * 100));
 
       result.push({
         studentId: entry.meta.studentId || 1,
@@ -292,32 +323,135 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         avatarColor: entry.meta.avatarColor || "#6366f1",
         grades: sortedGrades,
         averageScore: avg,
+        completionCount: count,
+        completionPercent: percent,
       });
     });
 
-    // Alphabetical sort by student name
     return result.sort((a, b) => a.studentName.localeCompare(b.studentName));
   }, [items, students]);
 
-  // Filter by search query
-  const filteredGroups = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return studentGroups;
-
-    return studentGroups.filter((g) => {
-      if (g.studentName.toLowerCase().includes(term)) return true;
-      if (g.studentNumber.toLowerCase().includes(term)) return true;
-      if (g.gradeLevel.toLowerCase().includes(term)) return true;
-      if (g.section.toLowerCase().includes(term)) return true;
-      return g.grades.some((item) => (item.assessmentTitle || "").toLowerCase().includes(term));
+  // Extract available Grade and Section options for filter dropdowns (Feature 3)
+  const availableGrades = useMemo(() => {
+    const set = new Set<string>();
+    studentGroups.forEach((g) => {
+      if (g.gradeLevel) set.add(g.gradeLevel);
     });
-  }, [studentGroups, q]);
+    return Array.from(set).sort();
+  }, [studentGroups]);
+
+  const availableSections = useMemo(() => {
+    const set = new Set<string>();
+    studentGroups.forEach((g) => {
+      if (g.section) set.add(g.section);
+    });
+    return Array.from(set).sort();
+  }, [studentGroups]);
+
+  // Filtered Student Groups by Search + Grade + Section + Rating
+  const filteredGroups = useMemo(() => {
+    return studentGroups.filter((g) => {
+      // Search term
+      if (q.trim()) {
+        const term = q.trim().toLowerCase();
+        const matchesName = g.studentName.toLowerCase().includes(term);
+        const matchesId = g.studentNumber.toLowerCase().includes(term);
+        const matchesQuiz = g.grades.some((item) => (item.assessmentTitle || "").toLowerCase().includes(term));
+        if (!matchesName && !matchesId && !matchesQuiz) return false;
+      }
+
+      // Grade level filter
+      if (filterGrade !== "all" && g.gradeLevel !== filterGrade) {
+        return false;
+      }
+
+      // Section filter
+      if (filterSection !== "all" && g.section !== filterSection) {
+        return false;
+      }
+
+      // Rating filter
+      if (filterRating !== "all") {
+        if (filterRating === "excellent" && g.averageScore < 90) return false;
+        if (filterRating === "good" && (g.averageScore < 75 || g.averageScore >= 90)) return false;
+        if (filterRating === "passing" && (g.averageScore < 60 || g.averageScore >= 75)) return false;
+        if (filterRating === "needs_practice" && g.averageScore >= 60) return false;
+      }
+
+      return true;
+    });
+  }, [studentGroups, q, filterGrade, filterSection, filterRating]);
 
   // Active student for the Report Card modal
   const activeStudent = useMemo(() => {
     if (!selectedStudentId) return null;
     return studentGroups.find((g) => g.studentId === selectedStudentId) || null;
   }, [studentGroups, selectedStudentId]);
+
+  // Feature 2: Master Excel Export
+  function exportExcel() {
+    if (studentGroups.length === 0) {
+      showToast("No student grades available to export.", "error");
+      return;
+    }
+
+    try {
+      const rows = studentGroups.map((sg) => {
+        const q1 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 1);
+        const q2 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 2);
+        const q3 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 3);
+        const q4 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 4);
+        const summative = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 5);
+        const rating = getScoreRating(sg.averageScore);
+
+        return {
+          "Student ID": sg.studentNumber,
+          "Student Name": sg.studentName,
+          "Grade Level": sg.gradeLevel,
+          "Section": sg.section,
+          "Curriculum Completed": `${sg.completionCount} of 4 (${sg.completionPercent}%)`,
+          "Quarter 1 (%)": q1 ? Number(q1.score) : "—",
+          "Quarter 2 (%)": q2 ? Number(q2.score) : "—",
+          "Quarter 3 (%)": q3 ? Number(q3.score) : "—",
+          "Quarter 4 (%)": q4 ? Number(q4.score) : "—",
+          "Summative Assessment (%)": summative ? Number(summative.score) : "—",
+          "Average Score (%)": Number(sg.averageScore),
+          "Evaluation Status": rating.label.split("•")[1]?.trim() || "Evaluated",
+          "Remarks & Feedback": sg.grades.map((g) => `${g.assessmentTitle}: ${g.feedback || "Completed"}`).join(" | "),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Auto column widths
+      const colWidths = [
+        { wch: 14 },
+        { wch: 22 },
+        { wch: 14 },
+        { wch: 10 },
+        { wch: 22 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 24 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 60 },
+      ];
+      ws["!cols"] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, "Master Grades 2026");
+      const filename = `Matatag_Math_Master_Grades_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
+      showToast(`Master grades successfully exported as ${filename}`, "success");
+    } catch (err) {
+      console.error("Export failed:", err);
+      showToast("Failed to generate Excel export.", "error");
+    }
+  }
 
   async function save() {
     setFormError("");
@@ -364,6 +498,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         feedback: "",
       });
       await load();
+      showToast(edit ? "Grade updated successfully!" : "Grade logged successfully!", "success");
     } catch {
       setFormError("Network error while saving grade. Please try again.");
     } finally {
@@ -371,10 +506,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     }
   }
 
-  async function remove(id: number) {
-    if (!window.confirm("Are you sure you want to delete this grade record?")) {
-      return;
-    }
+  async function executeDelete(id: number) {
     try {
       const res = await fetch("/api/grades", {
         method: "DELETE",
@@ -383,12 +515,24 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data?.error || "Failed to delete grade record.");
+        showToast(data?.error || "Failed to delete grade record.", "error");
+        return;
       }
+      setDeleteTarget(null);
       await load();
+      showToast("Grade record deleted successfully.", "info");
     } catch {
-      alert("Network error while deleting grade.");
+      showToast("Network error while deleting grade.", "error");
     }
+  }
+
+  const hasActiveFilters = filterGrade !== "all" || filterSection !== "all" || filterRating !== "all" || q.trim() !== "";
+
+  function resetFilters() {
+    setQ("");
+    setFilterGrade("all");
+    setFilterSection("all");
+    setFilterRating("all");
   }
 
   return (
@@ -406,25 +550,38 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 Student Grades & Performance
               </h1>
               <p className="text-slate-400 text-sm mt-1">
-                Showing students with evaluated activities. Click any student row to view all grades from Quarter 1 to Summative Assessment.
+                Evaluated student activities and curriculum progress. Click any student row to view all quarter assessments.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setEdit(null);
-                setForm({
-                  studentId: students[0]?.id ?? 1,
-                  assessmentId: assessments[0]?.id ?? 1,
-                  score: 85,
-                  pointsEarned: 85,
-                  feedback: "",
-                });
-                setOpen(true);
-              }}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-950/50 hover:scale-[1.02] transition cursor-pointer self-start md:self-auto"
-            >
-              <Plus size={18} /> Log Grade
-            </button>
+
+            {/* Header Action Buttons (Feature 2) */}
+            <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
+              <button
+                onClick={exportExcel}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white font-bold text-sm transition cursor-pointer shadow-md hover:scale-[1.02]"
+                title="Download complete grades matrix as an Excel file"
+              >
+                <Download size={16} className="text-emerald-400" />
+                <span>Export Master (Excel)</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setEdit(null);
+                  setForm({
+                    studentId: students[0]?.id ?? 1,
+                    assessmentId: assessments[0]?.id ?? 1,
+                    score: 85,
+                    pointsEarned: 85,
+                    feedback: "",
+                  });
+                  setOpen(true);
+                }}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-950/50 hover:scale-[1.02] transition cursor-pointer"
+              >
+                <Plus size={18} /> Log Grade
+              </button>
+            </div>
           </div>
 
           {fetchError && (
@@ -442,21 +599,89 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           )}
 
-          {/* Search bar & summary */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search student name or ID (e.g. 2026-008)..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 placeholder:text-slate-500 text-white transition"
-              />
+          {/* Search & Fast Filters Row (Feature 3) */}
+          <div className="glass-card rounded-2xl p-4 border border-white/10 mb-6 space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              {/* Search input */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search student name, ID (e.g. 2026-008), or assessment..."
+                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 placeholder:text-slate-500 text-white transition"
+                />
+              </div>
+
+              {/* Dropdown Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Grade Level Dropdown */}
+                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs">
+                  <span className="text-slate-400 font-medium">Grade:</span>
+                  <select
+                    value={filterGrade}
+                    onChange={(e) => setFilterGrade(e.target.value)}
+                    className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900">All Grades</option>
+                    {availableGrades.map((g) => (
+                      <option key={g} value={g} className="bg-slate-900">{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Section Dropdown */}
+                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs">
+                  <span className="text-slate-400 font-medium">Section:</span>
+                  <select
+                    value={filterSection}
+                    onChange={(e) => setFilterSection(e.target.value)}
+                    className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900">All Sections</option>
+                    {availableSections.map((sec) => (
+                      <option key={sec} value={sec} className="bg-slate-900">Section {sec}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Rating Dropdown */}
+                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs">
+                  <span className="text-slate-400 font-medium">Rating:</span>
+                  <select
+                    value={filterRating}
+                    onChange={(e) => setFilterRating(e.target.value)}
+                    className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900">All Ratings</option>
+                    <option value="excellent" className="bg-slate-900">Excellent (90%+)</option>
+                    <option value="good" className="bg-slate-900">Good (75-89%)</option>
+                    <option value="passing" className="bg-slate-900">Passing (60-74%)</option>
+                    <option value="needs_practice" className="bg-slate-900">Needs Practice (&lt;60%)</option>
+                  </select>
+                </div>
+
+                {/* Reset Filters button */}
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 text-violet-200 border border-violet-400/30 text-xs font-bold transition cursor-pointer"
+                    title="Reset all active filters"
+                  >
+                    <RotateCcw size={12} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="text-xs text-slate-400 font-medium">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
-                <CheckCircle2 size={13} className="text-emerald-400" />
-                <span className="text-white font-bold">{filteredGroups.length}</span> students with recorded grades
+
+            {/* Quick summary stats */}
+            <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
+              <span>
+                Showing <strong className="text-white">{filteredGroups.length}</strong> of{" "}
+                <strong className="text-slate-300">{studentGroups.length}</strong> students with recorded grades
+              </span>
+              <span className="text-[11px] text-slate-500 hidden sm:inline">
+                Click any student row to view full report & printable grade slip
               </span>
             </div>
           </div>
@@ -473,26 +698,37 @@ export default function GradesClient({ userName, role }: { userName: string; rol
               <div className="w-16 h-16 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4 text-violet-400">
                 <Award size={32} />
               </div>
-              <h3 className="text-xl font-extrabold text-white mb-2">No student grades found</h3>
+              <h3 className="text-xl font-extrabold text-white mb-2">No students match current filters</h3>
               <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
-                Students will appear here automatically once they complete a quiz in the Cognitive Maze desktop game or when a teacher logs a grade.
+                {hasActiveFilters
+                  ? "Try resetting your search filters to see all evaluated students."
+                  : "Students will appear here automatically once they complete a quiz in the Cognitive Maze desktop game."}
               </p>
-              <button
-                onClick={() => {
-                  setEdit(null);
-                  setForm({
-                    studentId: students[0]?.id ?? 1,
-                    assessmentId: assessments[0]?.id ?? 1,
-                    score: 85,
-                    pointsEarned: 85,
-                    feedback: "",
-                  });
-                  setOpen(true);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
-              >
-                Log First Grade
-              </button>
+              {hasActiveFilters ? (
+                <button
+                  onClick={resetFilters}
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
+                >
+                  Reset Filters
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEdit(null);
+                    setForm({
+                      studentId: students[0]?.id ?? 1,
+                      assessmentId: assessments[0]?.id ?? 1,
+                      score: 85,
+                      pointsEarned: 85,
+                      feedback: "",
+                    });
+                    setOpen(true);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
+                >
+                  Log First Grade
+                </button>
+              )}
             </div>
           ) : (
             /* Clean Modern Grades Table */
@@ -502,9 +738,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                   <thead>
                     <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-white/10 bg-white/[0.03]">
                       <th className="py-4 px-6">Student</th>
-                      <th className="py-4 px-6">Curriculum Progress</th>
+                      <th className="py-4 px-6">Curriculum Progress (Feature 4)</th>
                       <th className="py-4 px-6">Average Score</th>
-                      <th className="py-4 px-6 text-right">Details</th>
+                      <th className="py-4 px-6 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -548,41 +784,67 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                             </div>
                           </td>
 
-                          {/* Completed Quarters chips */}
-                          <td className="py-4 px-6">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {sg.grades.map((g) => {
-                                const r = getScoreRating(g.score);
-                                const qLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
-                                return (
-                                  <span
-                                    key={g.id}
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass} shadow-sm`}
-                                    title={`${g.assessmentTitle}: ${g.score}%`}
-                                  >
-                                    <span>{qLabel}:</span>
-                                    <span>{g.score}%</span>
-                                  </span>
-                                );
-                              })}
-                              <span className="text-[11px] text-slate-400 font-medium ml-1">
-                                ({sg.grades.length} completed)
-                              </span>
+                          {/* Feature 4: Progress Bar + Quarter Chips */}
+                          <td className="py-4 px-6 min-w-[280px]">
+                            <div className="space-y-2">
+                              {/* Progress bar */}
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-300 font-semibold">
+                                  {sg.completionCount} of 4 Completed
+                                </span>
+                                <span
+                                  className="font-bold text-[11px]"
+                                  style={{ color: sg.completionPercent === 100 ? "#10b981" : "#f59e0b" }}
+                                >
+                                  {sg.completionPercent}%
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    sg.completionPercent === 100
+                                      ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                                      : "bg-gradient-to-r from-amber-500 to-violet-400"
+                                  }`}
+                                  style={{ width: `${sg.completionPercent}%` }}
+                                />
+                              </div>
+
+                              {/* Quarter Chips */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                {sg.grades.map((g) => {
+                                  const r = getScoreRating(g.score);
+                                  const qLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
+                                  return (
+                                    <span
+                                      key={g.id}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${r.badgeClass} shadow-sm`}
+                                      title={`${g.assessmentTitle}: ${g.score}%`}
+                                    >
+                                      <span>{qLabel}:</span>
+                                      <span>{g.score}%</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </td>
 
-                          {/* Average Score */}
+                          {/* Average Score & Rating */}
                           <td className="py-4 px-6">
-                            <div className="inline-flex items-center gap-2">
+                            <div className="inline-flex flex-col">
                               <span
                                 className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-black border ${avgRating.badgeClass}`}
                               >
                                 {avgRating.label}
                               </span>
+                              <span className="text-[11px] text-slate-400 mt-1 max-w-[170px] truncate">
+                                {avgRating.ratingText}
+                              </span>
                             </div>
                           </td>
 
-                          {/* Action Button (single-line, non-wrapping) */}
+                          {/* Action Button */}
                           <td className="py-4 px-6 text-right whitespace-nowrap">
                             <button
                               onClick={(e) => {
@@ -605,7 +867,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
           )}
 
           {/* ========================================================= */}
-          {/* STUDENT REPORT CARD MODAL: QUARTER 1 TO SUMMATIVE ASSESSMENT */}
+          {/* STUDENT REPORT CARD MODAL + PRINTABLE PDF SLIP (Feature 2 & 4) */}
           {/* ========================================================= */}
           {activeStudent && (
             <div
@@ -613,6 +875,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
               onClick={() => setSelectedStudentId(null)}
             >
               <div
+                id="printable-report-card"
                 className="bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-950 border border-white/15 rounded-3xl p-6 md:p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -632,7 +895,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                     </div>
                     <div>
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 text-[11px] font-bold mb-1 border border-violet-400/30">
-                        <Sparkles size={12} /> Student Report Card
+                        <Sparkles size={12} /> Student Progress Report Card
                       </div>
                       <h2 className="text-2xl font-black text-white">{activeStudent.studentName}</h2>
                       <div className="flex items-center gap-2 mt-1">
@@ -647,51 +910,75 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                   </div>
                   <button
                     onClick={() => setSelectedStudentId(null)}
-                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer"
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer print:hidden"
                   >
                     <X size={20} />
                   </button>
                 </div>
 
-                {/* Performance Summary Banner */}
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <div>
-                    <span className="text-xs text-slate-400 block mb-0.5">Overall Average Score</span>
+                {/* Performance & Curriculum Meter Banners (Feature 4) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                  {/* Average Score Banner */}
+                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between">
+                    <span className="text-xs text-slate-400 block mb-1">Overall Class Average</span>
                     <div className="flex items-center gap-3">
                       <span className="text-3xl font-black text-white">{activeStudent.averageScore}%</span>
                       {(() => {
                         const r = getScoreRating(activeStudent.averageScore);
                         return (
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${r.badgeClass}`}>
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${r.badgeClass}`}>
                             {r.label.split("•")[1]?.trim() || "Evaluated"}
                           </span>
                         );
                       })()}
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setEdit(null);
-                      setForm({
-                        studentId: activeStudent.studentId,
-                        assessmentId: assessments[0]?.id ?? 1,
-                        score: 85,
-                        pointsEarned: 85,
-                        feedback: "",
-                      });
-                      setOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-                  >
-                    <Plus size={14} /> Log Another Grade
-                  </button>
+
+                  {/* Curriculum Progress Banner */}
+                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-slate-400">Curriculum Completion</span>
+                      <span className="font-bold text-white">
+                        {activeStudent.completionCount} / 4 ({activeStudent.completionPercent}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden my-2">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400"
+                        style={{ width: `${activeStudent.completionPercent}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      {activeStudent.completionPercent === 100
+                        ? "All 4 quarters finished in Cognitive Maze!"
+                        : `${4 - activeStudent.completionCount} stage(s) remaining`}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Quarter Cards List */}
                 <div className="space-y-3.5">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <BookOpen size={14} className="text-violet-400" />
-                    Curriculum Assessments (Quarter 1 to Summative)
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                      <BookOpen size={14} className="text-violet-400" />
+                      Quarter Evaluations (Q1 to Summative)
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEdit(null);
+                        setForm({
+                          studentId: activeStudent.studentId,
+                          assessmentId: assessments[0]?.id ?? 1,
+                          score: 85,
+                          pointsEarned: 85,
+                          feedback: "",
+                        });
+                        setOpen(true);
+                      }}
+                      className="px-3 py-1 rounded-lg bg-violet-600/30 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition cursor-pointer print:hidden"
+                    >
+                      + Log Another Grade
+                    </button>
                   </div>
 
                   {activeStudent.grades.map((g) => {
@@ -714,7 +1001,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                               <span className="text-[11px] text-slate-400">
                                 {order === 5
                                   ? "Summative Assessment (Water Temple)"
-                                  : `Quarter ${order} Assessment`}
+                                  : `Quarter ${order} Curriculum Assessment`}
                               </span>
                             </div>
                           </div>
@@ -722,7 +1009,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                             <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${rating.badgeClass}`}>
                               {rating.label}
                             </span>
-                            <div className="flex items-center gap-1 ml-2">
+                            <div className="flex items-center gap-1 ml-2 print:hidden">
                               <button
                                 onClick={() => {
                                   setForm({
@@ -741,7 +1028,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                                 <Pencil size={13} />
                               </button>
                               <button
-                                onClick={() => remove(g.id)}
+                                onClick={() => setDeleteTarget(g)}
                                 className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
                                 title="Delete Grade"
                               >
@@ -768,12 +1055,60 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                   })}
                 </div>
 
-                <div className="mt-8 flex justify-end">
+                {/* Modal Footer with Print and Done buttons (Feature 2) */}
+                <div className="mt-8 flex items-center justify-between gap-3 pt-4 border-t border-white/10 print:hidden">
+                  <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white font-bold text-xs transition cursor-pointer"
+                    title="Print student evaluation card"
+                  >
+                    <Printer size={15} />
+                    <span>Print Report Card (PDF)</span>
+                  </button>
+
                   <button
                     onClick={() => setSelectedStudentId(null)}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg transition cursor-pointer"
                   >
-                    Close
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* IN-APP CONFIRMATION MODAL FOR DELETIONS (Feature 5) */}
+          {/* ========================================================= */}
+          {deleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">Delete Grade Record?</h3>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                  Are you sure you want to remove the grade for{" "}
+                  <strong className="text-white">{deleteTarget.assessmentTitle || "this assessment"}</strong>? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => executeDelete(deleteTarget.id)}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    Delete Grade
                   </button>
                 </div>
               </div>
@@ -886,6 +1221,41 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* FLOATING TOAST CONTAINER (Feature 5) */}
+          {/* ========================================================= */}
+          {toasts.length > 0 && (
+            <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+              {toasts.map((toast) => (
+                <div
+                  key={toast.id}
+                  className={`pointer-events-auto flex items-center gap-3 p-4 rounded-2xl shadow-2xl border backdrop-blur-xl animate-fade-up ${
+                    toast.type === "success"
+                      ? "bg-slate-900/90 border-emerald-500/40 text-emerald-200"
+                      : toast.type === "error"
+                      ? "bg-slate-900/90 border-rose-500/40 text-rose-200"
+                      : "bg-slate-900/90 border-violet-500/40 text-violet-200"
+                  }`}
+                >
+                  {toast.type === "success" ? (
+                    <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                  ) : toast.type === "error" ? (
+                    <AlertTriangle size={18} className="text-rose-400 shrink-0" />
+                  ) : (
+                    <Sparkles size={18} className="text-violet-400 shrink-0" />
+                  )}
+                  <span className="text-xs font-semibold flex-1 text-white">{toast.text}</span>
+                  <button
+                    onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
