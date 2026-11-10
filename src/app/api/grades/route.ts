@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { grades, students, assessments, units } from "@/db/schema";
+import { grades, gameResults, students, assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
 const DEMO_GRADES = [
@@ -327,6 +327,20 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
+    const deleteAll = searchParams.get("all") === "true" || body?.all === true || body?.deleteAll === true;
+    if (deleteAll) {
+      try {
+        await db.delete(grades);
+        await db.delete(gameResults);
+      } catch (allErr) {
+        console.warn("Error deleting all grades and results:", allErr);
+      }
+      if (globalForGrades.__inMemoryGrades) {
+        globalForGrades.__inMemoryGrades = [];
+      }
+      return NextResponse.json({ success: true, message: "All grades and game results cleared." });
+    }
+
     if (studentIdParam) {
       const studentId = Number(studentIdParam);
       if (!studentId || isNaN(studentId) || studentId <= 0) {
@@ -339,6 +353,7 @@ export async function DELETE(req: NextRequest) {
 
       try {
         await db.delete(grades).where(whereClause);
+        await db.delete(gameResults).where(eq(gameResults.studentId, studentId));
       } catch (delErr) {
         console.warn("Grades delete by studentId error:", delErr);
       }
@@ -358,12 +373,26 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "A valid Grade ID is required." }, { status: 400 });
       }
 
+      let targetGrade: any = null;
+      try {
+        const found = await db.select().from(grades).where(eq(grades.id, id)).limit(1);
+        if (found.length > 0) targetGrade = found[0];
+      } catch {}
+
       const whereClause = isAdmin
         ? eq(grades.id, id)
         : and(eq(grades.id, id), eq(grades.userId, userId));
 
       try {
         await db.delete(grades).where(whereClause);
+        if (targetGrade && targetGrade.studentId && targetGrade.assessmentId) {
+          await db.delete(gameResults).where(
+            and(
+              eq(gameResults.studentId, targetGrade.studentId),
+              eq(gameResults.assessmentId, targetGrade.assessmentId)
+            )
+          );
+        }
       } catch {
         console.warn("Grades DB offline on delete, removing from memory fallback list");
       }

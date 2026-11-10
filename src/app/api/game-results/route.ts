@@ -272,6 +272,16 @@ export async function DELETE(req: NextRequest) {
     const idParam = searchParams.get("id") || body?.id;
     const studentIdParam = searchParams.get("studentId") || body?.studentId;
     const cleanOrphaned = searchParams.get("cleanOrphaned") === "true" || body?.cleanOrphaned === true;
+    const deleteAll = searchParams.get("all") === "true" || body?.all === true || body?.deleteAll === true;
+
+    if (deleteAll) {
+      try {
+        await db.delete(gameResults);
+      } catch (allErr) {
+        console.warn("Error deleting all game results:", allErr);
+      }
+      return NextResponse.json({ success: true, message: "All game results cleared." });
+    }
 
     if (cleanOrphaned) {
       try {
