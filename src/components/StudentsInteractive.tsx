@@ -153,6 +153,47 @@ function buildStudentFromRow(row: Record<string, any>): Partial<Student> | null 
   return { studentId, fullName, birthday, age, gradeLevel, section, gender, avatarColor };
 }
 
+function findStudentForGrade(
+  grade: { studentId: number; studentNumber?: string | null; studentName?: string | null },
+  studentList: Student[]
+): Student | undefined {
+  // 1. Match by numeric database ID
+  let match = studentList.find((s) => s.id === grade.studentId);
+  if (match) return match;
+
+  // 2. Match by normalized student ID (e.g. 2026-008 vs S-2024-008)
+  const normGradeNum = normalizeStudentId(grade.studentNumber);
+  if (normGradeNum) {
+    match = studentList.find((s) => normalizeStudentId(s.studentId) === normGradeNum);
+    if (match) return match;
+  }
+
+  // 3. Match by student full name (case insensitive)
+  if (grade.studentName) {
+    const cleanName = grade.studentName.trim().toLowerCase();
+    match = studentList.find((s) => s.fullName.trim().toLowerCase() === cleanName);
+    if (match) return match;
+  }
+
+  return undefined;
+}
+
+function categorizeGradeQuarter(title?: string | null, quarter?: string | null): "Quarter 1" | "Quarter 2" | "Quarter 3" | "Summative" | null {
+  const qStr = String(quarter || "").trim().toLowerCase();
+  if (qStr === "summative" || qStr.includes("summative") || qStr === "final") return "Summative";
+  if (qStr.includes("1") || qStr === "quarter 1") return "Quarter 1";
+  if (qStr.includes("2") || qStr === "quarter 2") return "Quarter 2";
+  if (qStr.includes("3") || qStr === "quarter 3") return "Quarter 3";
+
+  const t = String(title || "").toLowerCase();
+  if (t.includes("summative") || t.includes("water temple") || t.includes("final")) return "Summative";
+  if (t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return "Quarter 1";
+  if (t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return "Quarter 2";
+  if (t.includes("quarter 3") || t.includes("q3") || t.includes("unit 3")) return "Quarter 3";
+
+  return null;
+}
+
 export default function StudentsClient({ userName, role }: { userName: string; role?: string }) {
   const [items, setItems] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,22 +301,55 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         feedback: string | null;
         quarter: string | null;
       }> = await response.json();
-      const quarters = ["Quarter 1", "Quarter 2", "Quarter 3"];
-      const quarterScores = new Map<number, Map<string, number[]>>();
+
+      // Map: student.id -> Map<"Quarter 1" | "Quarter 2" | "Quarter 3" | "Summative", number[]>
+      const studentQuarterScores = new Map<number, Map<string, number[]>>();
+      const allStudentScores = new Map<number, number[]>();
 
       for (const grade of gradeRows) {
-        const quarter = quarters.find((label) => label.toLowerCase() === (grade.quarter || "").trim().toLowerCase());
-        if (!quarter) continue;
-        const byQuarter = quarterScores.get(grade.studentId) ?? new Map<string, number[]>();
-        const scores = byQuarter.get(quarter) ?? [];
+        const student = findStudentForGrade(grade, items);
+        if (!student) continue;
+
+        const period = categorizeGradeQuarter(grade.assessmentTitle, grade.quarter);
+        if (!period) continue;
+
+        const byQuarter = studentQuarterScores.get(student.id) ?? new Map<string, number[]>();
+        const scores = byQuarter.get(period) ?? [];
         scores.push(Number(grade.score));
-        byQuarter.set(quarter, scores);
-        quarterScores.set(grade.studentId, byQuarter);
+        byQuarter.set(period, scores);
+        studentQuarterScores.set(student.id, byQuarter);
+
+        const allScores = allStudentScores.get(student.id) ?? [];
+        allScores.push(Number(grade.score));
+        allStudentScores.set(student.id, allScores);
       }
 
       const summaryRows = items.map((student) => {
-        const scores = quarterScores.get(student.id);
+        const scoresMap = studentQuarterScores.get(student.id);
+        const allScores = allStudentScores.get(student.id) ?? [];
         const resolvedAge = student.age ?? calculateAge(student.birthday);
+
+        const getAvg = (period: string) => {
+          const list = scoresMap?.get(period) ?? [];
+          return list.length ? Number((list.reduce((sum, v) => sum + v, 0) / list.length).toFixed(1)) : null;
+        };
+
+        const q1Avg = getAvg("Quarter 1");
+        const q2Avg = getAvg("Quarter 2");
+        const q3Avg = getAvg("Quarter 3");
+        const summativeAvg = getAvg("Summative");
+
+        const generalAvg = allScores.length
+          ? Number((allScores.reduce((sum, v) => sum + v, 0) / allScores.length).toFixed(1))
+          : null;
+
+        let status = "No Grades Recorded";
+        if (generalAvg !== null) {
+          if (generalAvg >= 90) status = "Mastered";
+          else if (generalAvg >= 75) status = "Passing";
+          else status = "Needs Practice";
+        }
+
         return {
           Name: student.fullName,
           Birthday: student.birthday ? formatBirthday(student.birthday) : "",
@@ -284,38 +358,104 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           Grade: student.gradeLevel,
           Section: student.section,
           "Student ID": student.studentId,
-          ...Object.fromEntries(quarters.map((quarter) => {
-            const values = scores?.get(quarter) ?? [];
-            const average = values.length ? values.reduce((sum, score) => sum + score, 0) / values.length : null;
-            return [`${quarter} Score (%)`, average === null ? "" : Number(average.toFixed(2))];
-          })),
+          "Quarter 1 Score (%)": q1Avg !== null ? q1Avg : "—",
+          "Quarter 2 Score (%)": q2Avg !== null ? q2Avg : "—",
+          "Quarter 3 Score (%)": q3Avg !== null ? q3Avg : "—",
+          "Summative Assessment (%)": summativeAvg !== null ? summativeAvg : "—",
+          "Average Score (%)": generalAvg !== null ? generalAvg : "—",
+          "Evaluation Status": status,
         };
       });
+
       const reportRows = gradeRows.map((grade) => {
-        const student = items.find((item) => item.id === grade.studentId);
+        const student = findStudentForGrade(grade, items);
         const resolvedAge = student?.age ?? calculateAge(student?.birthday);
+        const period = categorizeGradeQuarter(grade.assessmentTitle, grade.quarter);
+        const displayQuarter = period === "Summative"
+          ? "Summative Assessment"
+          : (period || grade.quarter || "Assessment");
+
         return {
-          Name: grade.studentName ?? student?.fullName ?? "",
-          "Student ID": grade.studentNumber ?? student?.studentId ?? "",
+          Name: student?.fullName ?? grade.studentName ?? "Unknown Student",
+          "Student ID": student?.studentId ?? normalizeStudentId(grade.studentNumber),
           Birthday: student?.birthday ? formatBirthday(student?.birthday) : "",
           Age: resolvedAge ?? "",
           Gender: student?.gender ?? "",
-          Grade: student?.gradeLevel ?? "",
-          Section: student?.section ?? "",
-          Quarter: grade.quarter ?? "",
-          Assessment: grade.assessmentTitle ?? "",
-          "Score (%)": grade.score,
-          Feedback: grade.feedback ?? "",
+          Grade: student?.gradeLevel ?? "Grade 2",
+          Section: student?.section ?? "A",
+          Period: displayQuarter,
+          Assessment: grade.assessmentTitle ?? "Quiz",
+          "Score (%)": Number(grade.score),
+          Feedback: grade.feedback ?? "Completed",
         };
       });
 
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows, {
-        header: ["Name", "Birthday", "Age", "Gender", "Grade", "Section", "Student ID", ...quarters.map((quarter) => `${quarter} Score (%)`)],
-      }), "Student Summary");
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(reportRows, {
-        header: ["Name", "Student ID", "Birthday", "Age", "Gender", "Grade", "Section", "Quarter", "Assessment", "Score (%)", "Feedback"],
-      }), "Quarterly Report");
+
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows, {
+        header: [
+          "Name",
+          "Birthday",
+          "Age",
+          "Gender",
+          "Grade",
+          "Section",
+          "Student ID",
+          "Quarter 1 Score (%)",
+          "Quarter 2 Score (%)",
+          "Quarter 3 Score (%)",
+          "Summative Assessment (%)",
+          "Average Score (%)",
+          "Evaluation Status",
+        ],
+      });
+      wsSummary["!cols"] = [
+        { wch: 22 },
+        { wch: 14 },
+        { wch: 6 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 25 },
+        { wch: 18 },
+        { wch: 18 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsSummary, "Student Summary");
+
+      const wsReport = XLSX.utils.json_to_sheet(reportRows, {
+        header: [
+          "Name",
+          "Student ID",
+          "Birthday",
+          "Age",
+          "Gender",
+          "Grade",
+          "Section",
+          "Period",
+          "Assessment",
+          "Score (%)",
+          "Feedback",
+        ],
+      });
+      wsReport["!cols"] = [
+        { wch: 22 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 6 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 10 },
+        { wch: 22 },
+        { wch: 36 },
+        { wch: 12 },
+        { wch: 60 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, wsReport, "Quarterly Report");
+
       XLSX.writeFile(workbook, "student-quarterly-report.xlsx");
     } catch (error) {
       console.error("Excel export failed", error);
