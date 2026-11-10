@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
         } else {
           // First evaluated attempt for this assessment
           await db.insert(grades).values({
-            userId,
+            userId: effectiveUserId,
             studentId: payload.studentId,
             assessmentId: payload.assessmentId,
             score: payload.percentage,
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
         } else {
           list.push({
             id: list.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0) + 1,
-            userId,
+            userId: effectiveUserId,
             studentId: payload.studentId,
             assessmentId: payload.assessmentId,
             score: payload.percentage,
