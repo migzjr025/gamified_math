@@ -6,21 +6,15 @@ import {
   Trash2,
   Pencil,
   Search,
-  Zap,
-  TrendingUp,
   Sparkles,
   FileText,
-  CheckCircle2,
   AlertTriangle,
-  Lightbulb,
   X,
-  ChevronDown,
-  ChevronRight,
-  User,
-  Award,
   BookOpen,
+  Award,
   Calendar,
-  Layers,
+  CheckCircle2,
+  GraduationCap,
 } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
 
@@ -36,7 +30,7 @@ interface GradeRow {
   assessmentTitle?: string;
   assessmentType?: string;
   unitTitle?: string;
-  quarter?: number | null;
+  quarter?: string | number | null;
   createdAt?: string | null;
 }
 
@@ -61,8 +55,32 @@ interface StudentGroup {
   averageScore: number;
 }
 
-function getQuarterOrder(title?: string, quarter?: number | null): number {
-  if (quarter && quarter >= 1 && quarter <= 4) return quarter;
+function normalizeStudentNumber(raw?: string | null, fallbackId: number = 1): string {
+  if (!raw) return `2026-${String(fallbackId).padStart(3, "0")}`;
+  let clean = raw.trim();
+  // Strip S- or s- prefix (e.g. S-2024-008 -> 2024-008)
+  if (/^s-/i.test(clean)) {
+    clean = clean.replace(/^s-/i, "").trim();
+  }
+  // Convert 2024-XXX or any YYYY-XXX to 2026-XXX
+  if (/^\d{4}-\d{3,}$/.test(clean)) {
+    return clean.replace(/^\d{4}-/, "2026-");
+  }
+  // Convert raw numbers like "12" to "2026-012"
+  if (/^\d{1,3}$/.test(clean)) {
+    return `2026-${clean.padStart(3, "0")}`;
+  }
+  return clean;
+}
+
+function getQuarterOrder(title?: string, quarter?: string | number | null): number {
+  const qStr = String(quarter || "").toLowerCase();
+  if (qStr.includes("1") || qStr === "quarter 1") return 1;
+  if (qStr.includes("2") || qStr === "quarter 2") return 2;
+  if (qStr.includes("3") || qStr === "quarter 3") return 3;
+  if (qStr.includes("4") || qStr === "quarter 4") return 4;
+  if (qStr.includes("summative") || qStr === "final") return 5;
+
   const t = (title || "").toLowerCase();
   if (t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return 1;
   if (t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return 2;
@@ -72,42 +90,38 @@ function getQuarterOrder(title?: string, quarter?: number | null): number {
   return 6;
 }
 
-function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string; toneClass: string } {
+function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string } {
   if (score >= 90) {
     return {
       label: `${score}% • Excellent`,
-      ratingText: "Outstanding work! Full mastery of topics.",
+      ratingText: "Outstanding mastery of lesson objectives.",
       badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-      toneClass: "text-emerald-400",
     };
   }
   if (score >= 75) {
     return {
       label: `${score}% • Good`,
-      ratingText: "Great job! Solid understanding of the lesson.",
+      ratingText: "Solid understanding and consistent work.",
       badgeClass: "bg-teal-500/15 text-teal-300 border-teal-500/30",
-      toneClass: "text-teal-400",
     };
   }
   if (score >= 60) {
     return {
       label: `${score}% • Passing`,
-      ratingText: "Passed! A quick review of missed items is recommended.",
+      ratingText: "Passed the assessment requirement.",
       badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-      toneClass: "text-amber-400",
     };
   }
   return {
     label: `${score}% • Needs Practice`,
-    ratingText: "Needs more practice and teacher guidance.",
+    ratingText: "Additional practice and support recommended.",
     badgeClass: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-    toneClass: "text-rose-400",
   };
 }
 
 function formatLaymanFeedback(feedback?: string | null): { preview: string; isGameSummary: boolean; correct?: number; total?: number } {
   if (!feedback || !feedback.trim()) {
-    return { preview: "No remarks yet", isGameSummary: false };
+    return { preview: "No teacher notes", isGameSummary: false };
   }
   const trimmed = feedback.trim();
   const gameMatch = trimmed.match(/Answered (\d+) of (\d+) questions correctly/i);
@@ -129,7 +143,7 @@ function formatLaymanFeedback(feedback?: string | null): { preview: string; isGa
   };
 }
 
-function getQuarterShortLabel(title?: string, quarter?: number | null): string {
+function getQuarterShortLabel(title?: string, quarter?: string | number | null): string {
   const ord = getQuarterOrder(title, quarter);
   if (ord === 1) return "Q1";
   if (ord === 2) return "Q2";
@@ -151,19 +165,8 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<GradeRow | null>(null);
 
-  // Expanded student report card modal
+  // Active student for the "Quarter 1 to Summative" Report Card Modal
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
-
-  // Inline expandable accordion rows in table
-  const [expandedRowIds, setExpandedRowIds] = useState<Set<number>>(new Set());
-
-  // Quick single feedback popup
-  const [selectedRemarks, setSelectedRemarks] = useState<{
-    studentName: string;
-    assessmentTitle: string;
-    score: number;
-    feedback: string;
-  } | null>(null);
 
   const [form, setForm] = useState({
     studentId: 1,
@@ -190,7 +193,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const parsedStudents: StudentMeta[] = Array.isArray(dataS)
         ? dataS.map((s: any) => ({
             id: s.id,
-            studentId: s.studentId,
+            studentId: normalizeStudentNumber(s.studentId, s.id),
             fullName: s.fullName,
             gradeLevel: s.gradeLevel,
             section: s.section,
@@ -213,7 +216,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       }
     } catch (err: any) {
       console.error("Grades load failed:", err);
-      setFetchError("Unable to load grades or related records. Please check your connection and retry.");
+      setFetchError("Unable to load grades. Please check your connection and retry.");
     } finally {
       setLoading(false);
     }
@@ -223,74 +226,80 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     load();
   }, []);
 
-  // Group all grades by student (each student appears only once!)
+  // Group grades by student and ONLY include students who have recorded grades!
   const studentGroups = useMemo<StudentGroup[]>(() => {
     const studentMetaMap = new Map<number, StudentMeta>();
-    students.forEach((s) => studentMetaMap.set(s.id, s));
-
-    const groupsMap = new Map<number, GradeRow[]>();
-    items.forEach((g) => {
-      const sid = g.studentId;
-      if (!groupsMap.has(sid)) {
-        groupsMap.set(sid, []);
-      }
-      groupsMap.get(sid)!.push(g);
+    const studentByName = new Map<string, StudentMeta>();
+    students.forEach((s) => {
+      studentMetaMap.set(s.id, s);
+      studentByName.set(s.fullName.trim().toLowerCase(), s);
     });
 
-    const groups: StudentGroup[] = [];
+    // Group grade items using a canonical key (student name or normalized ID)
+    // to prevent any duplicate Sofia Lim rows even if DB has conflicting primary keys.
+    const grouped = new Map<string, { meta: Partial<StudentGroup>; grades: GradeRow[] }>();
 
-    // First process students who have grades
-    groupsMap.forEach((gradeList, sid) => {
-      const meta = studentMetaMap.get(sid);
-      const studentName = meta?.fullName || gradeList[0]?.studentName || `Student #${sid}`;
-      const studentNumber = meta?.studentId || gradeList[0]?.studentNumber || `2026-${String(sid).padStart(3, "0")}`;
-      const gradeLevel = meta?.gradeLevel || "Grade 2";
-      const section = meta?.section || "A";
-      const avatarColor = meta?.avatarColor || "#6366f1";
+    items.forEach((g) => {
+      const cleanName = (g.studentName || `Student #${g.studentId}`).trim();
+      const lookupMeta = studentMetaMap.get(g.studentId) || studentByName.get(cleanName.toLowerCase());
 
-      // Order from Quarter 1 -> Quarter 2 -> Quarter 3 -> Quarter 4 -> Summative
-      const sortedGrades = [...gradeList].sort((a, b) => {
+      const canonicalName = lookupMeta?.fullName || cleanName;
+      const canonicalKey = canonicalName.toLowerCase();
+      const canonicalId = lookupMeta?.id || g.studentId;
+      const canonicalNumber = normalizeStudentNumber(lookupMeta?.studentId || g.studentNumber, canonicalId);
+      const gradeLevel = lookupMeta?.gradeLevel || "Grade 2";
+      const section = lookupMeta?.section || "A";
+      const avatarColor = lookupMeta?.avatarColor || "#6366f1";
+
+      if (!grouped.has(canonicalKey)) {
+        grouped.set(canonicalKey, {
+          meta: {
+            studentId: canonicalId,
+            studentName: canonicalName,
+            studentNumber: canonicalNumber,
+            gradeLevel,
+            section,
+            avatarColor,
+          },
+          grades: [],
+        });
+      }
+
+      grouped.get(canonicalKey)!.grades.push(g);
+    });
+
+    // Build finalized student groups: ONLY students with at least 1 grade!
+    const result: StudentGroup[] = [];
+
+    grouped.forEach((entry) => {
+      if (entry.grades.length === 0) return; // Strict: only students with grades
+
+      // Sort grades chronologically from Quarter 1 to Summative
+      const sortedGrades = [...entry.grades].sort((a, b) => {
         return getQuarterOrder(a.assessmentTitle, a.quarter) - getQuarterOrder(b.assessmentTitle, b.quarter);
       });
 
-      const avg =
-        sortedGrades.length > 0
-          ? Math.round(sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length)
-          : 0;
+      const avg = Math.round(
+        sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length
+      );
 
-      groups.push({
-        studentId: sid,
-        studentName,
-        studentNumber,
-        gradeLevel,
-        section,
-        avatarColor,
+      result.push({
+        studentId: entry.meta.studentId || 1,
+        studentName: entry.meta.studentName || "Student",
+        studentNumber: entry.meta.studentNumber || "2026-001",
+        gradeLevel: entry.meta.gradeLevel || "Grade 2",
+        section: entry.meta.section || "A",
+        avatarColor: entry.meta.avatarColor || "#6366f1",
         grades: sortedGrades,
         averageScore: avg,
       });
     });
 
-    // Also include any registered students who don't have grades yet
-    students.forEach((s) => {
-      if (!groupsMap.has(s.id)) {
-        groups.push({
-          studentId: s.id,
-          studentName: s.fullName,
-          studentNumber: s.studentId || `2026-${String(s.id).padStart(3, "0")}`,
-          gradeLevel: s.gradeLevel || "Grade 2",
-          section: s.section || "A",
-          avatarColor: s.avatarColor || "#6366f1",
-          grades: [],
-          averageScore: 0,
-        });
-      }
-    });
-
-    // Sort alphabetically by student name
-    return groups.sort((a, b) => a.studentName.localeCompare(b.studentName));
+    // Alphabetical sort by student name
+    return result.sort((a, b) => a.studentName.localeCompare(b.studentName));
   }, [items, students]);
 
-  // Filter student groups by query
+  // Filter by search query
   const filteredGroups = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return studentGroups;
@@ -304,23 +313,11 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     });
   }, [studentGroups, q]);
 
-  // The active student for the "All Quarters" Report Card modal
+  // Active student for the Report Card modal
   const activeStudent = useMemo(() => {
     if (!selectedStudentId) return null;
     return studentGroups.find((g) => g.studentId === selectedStudentId) || null;
   }, [studentGroups, selectedStudentId]);
-
-  function toggleRowExpansion(studentId: number) {
-    setExpandedRowIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(studentId)) {
-        next.delete(studentId);
-      } else {
-        next.add(studentId);
-      }
-      return next;
-    });
-  }
 
   async function save() {
     setFormError("");
@@ -402,11 +399,14 @@ export default function GradesClient({ userName, role }: { userName: string; rol
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl lg:text-4xl font-extrabold bg-gradient-to-r from-white to-violet-200 bg-clip-text text-transparent">
-                Student Grades & Report Cards
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/15 border border-violet-400/20 text-violet-300 text-xs font-bold mb-2">
+                <GraduationCap size={14} /> Student Gradebook
+              </div>
+              <h1 className="text-3xl lg:text-4xl font-extrabold bg-gradient-to-r from-white via-slate-100 to-violet-200 bg-clip-text text-transparent">
+                Student Grades & Performance
               </h1>
-              <p className="text-slate-400 mt-1">
-                Click any student to view their complete grades and remarks from Quarter 1 to Summative Assessment.
+              <p className="text-slate-400 text-sm mt-1">
+                Showing students with evaluated activities. Click any student row to view all grades from Quarter 1 to Summative Assessment.
               </p>
             </div>
             <button
@@ -421,7 +421,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 });
                 setOpen(true);
               }}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-400 text-white font-bold shadow-xl shadow-violet-900/30 hover:scale-[1.03] transition cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-950/50 hover:scale-[1.02] transition cursor-pointer self-start md:self-auto"
             >
               <Plus size={18} /> Log Grade
             </button>
@@ -442,52 +442,74 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           )}
 
-          {/* Search bar */}
-          <div className="flex items-center gap-3 mb-6">
+          {/* Search bar & summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search student name, ID (e.g. 2026-008), or quarter..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 placeholder:text-slate-500 text-white"
+                placeholder="Search student name or ID (e.g. 2026-008)..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 placeholder:text-slate-500 text-white transition"
               />
             </div>
-            <div className="text-xs text-slate-400 font-medium hidden sm:block">
-              Showing <span className="text-white font-bold">{filteredGroups.length}</span> students
+            <div className="text-xs text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                <CheckCircle2 size={13} className="text-emerald-400" />
+                <span className="text-white font-bold">{filteredGroups.length}</span> students with recorded grades
+              </span>
             </div>
           </div>
 
           {/* Loading or Empty State */}
           {loading ? (
             <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
+              {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-20 rounded-2xl bg-white/5 animate-pulse" />
               ))}
             </div>
           ) : filteredGroups.length === 0 ? (
-            <div className="text-center py-24 glass-card rounded-3xl border border-white/10">
-              <Zap size={48} className="mx-auto text-slate-600 mb-4" />
-              <h3 className="text-xl font-extrabold text-white mb-2">No students found</h3>
-              <p className="text-slate-400 mb-6">Try searching with a different name or add students in the Students tab.</p>
+            <div className="text-center py-20 glass-card rounded-3xl border border-white/10 p-8">
+              <div className="w-16 h-16 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4 text-violet-400">
+                <Award size={32} />
+              </div>
+              <h3 className="text-xl font-extrabold text-white mb-2">No student grades found</h3>
+              <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
+                Students will appear here automatically once they complete a quiz in the Cognitive Maze desktop game or when a teacher logs a grade.
+              </p>
+              <button
+                onClick={() => {
+                  setEdit(null);
+                  setForm({
+                    studentId: students[0]?.id ?? 1,
+                    assessmentId: assessments[0]?.id ?? 1,
+                    score: 85,
+                    pointsEarned: 85,
+                    feedback: "",
+                  });
+                  setOpen(true);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
+              >
+                Log First Grade
+              </button>
             </div>
           ) : (
-            /* Student Table: Listed ONLY ONCE per student */
+            /* Clean Modern Grades Table */
             <div className="glass-card rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs font-extrabold text-slate-400 uppercase tracking-wider border-b border-white/10 bg-white/5">
-                      <th className="py-4 px-5">Student</th>
-                      <th className="py-4 px-5">Quarters & Activities Completed</th>
-                      <th className="py-4 px-5">Average Score & Rating</th>
-                      <th className="py-4 px-5 text-right">Quarter Breakdown</th>
+                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-white/10 bg-white/[0.03]">
+                      <th className="py-4 px-6">Student</th>
+                      <th className="py-4 px-6">Curriculum Progress</th>
+                      <th className="py-4 px-6">Average Score</th>
+                      <th className="py-4 px-6 text-right">Details</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {filteredGroups.map((sg) => {
                       const avgRating = getScoreRating(sg.averageScore);
-                      const isExpanded = expandedRowIds.has(sg.studentId);
                       const initials = sg.studentName
                         .split(" ")
                         .map((n) => n[0])
@@ -497,35 +519,24 @@ export default function GradesClient({ userName, role }: { userName: string; rol
 
                       return (
                         <tr
-                          key={sg.studentId}
-                          className="hover:bg-white/[0.04] transition group cursor-pointer"
+                          key={sg.studentNumber}
                           onClick={() => setSelectedStudentId(sg.studentId)}
+                          className="hover:bg-white/[0.04] transition-all cursor-pointer group"
                         >
-                          {/* Student Info */}
-                          <td className="py-4 px-5">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleRowExpansion(sg.studentId);
-                                }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition"
-                                title={isExpanded ? "Collapse Quarters" : "Expand Quarters"}
-                              >
-                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                              </button>
+                          {/* Student Profile */}
+                          <td className="py-4 px-6">
+                            <div className="flex items-center gap-3.5">
                               <div
-                                className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-md shrink-0 text-sm"
+                                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-white text-sm shadow-md shrink-0 ring-2 ring-white/10"
                                 style={{ backgroundColor: sg.avatarColor || "#6366f1" }}
                               >
                                 {initials}
                               </div>
                               <div>
-                                <div className="font-extrabold text-white text-base group-hover:text-violet-300 transition flex items-center gap-2">
-                                  <span>{sg.studentName}</span>
+                                <div className="font-extrabold text-white text-base group-hover:text-violet-300 transition-colors">
+                                  {sg.studentName}
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex items-center gap-2 mt-1">
                                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-violet-500/20 text-violet-300 font-mono font-bold border border-violet-400/30">
                                     {sg.studentNumber}
                                   </span>
@@ -535,117 +546,53 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                                 </div>
                               </div>
                             </div>
+                          </td>
 
-                            {/* Inline accordion when row expanded */}
-                            {isExpanded && sg.grades.length > 0 && (
-                              <div
-                                className="mt-4 pt-3 border-t border-white/10 space-y-2 pl-9"
-                                onClick={(e) => e.stopPropagation()}
+                          {/* Completed Quarters chips */}
+                          <td className="py-4 px-6">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {sg.grades.map((g) => {
+                                const r = getScoreRating(g.score);
+                                const qLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
+                                return (
+                                  <span
+                                    key={g.id}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass} shadow-sm`}
+                                    title={`${g.assessmentTitle}: ${g.score}%`}
+                                  >
+                                    <span>{qLabel}:</span>
+                                    <span>{g.score}%</span>
+                                  </span>
+                                );
+                              })}
+                              <span className="text-[11px] text-slate-400 font-medium ml-1">
+                                ({sg.grades.length} completed)
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Average Score */}
+                          <td className="py-4 px-6">
+                            <div className="inline-flex items-center gap-2">
+                              <span
+                                className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-black border ${avgRating.badgeClass}`}
                               >
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                                  Quarter Scores & Notes:
-                                </span>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                  {sg.grades.map((g) => {
-                                    const r = getScoreRating(g.score);
-                                    const fb = formatLaymanFeedback(g.feedback);
-                                    return (
-                                      <div
-                                        key={g.id}
-                                        className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-3 text-xs"
-                                      >
-                                        <div className="min-w-0">
-                                          <div className="font-bold text-white truncate">{g.assessmentTitle}</div>
-                                          <div className="text-slate-400 text-[11px] truncate mt-0.5">
-                                            {fb.preview}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <span className={`px-2 py-0.5 rounded-md font-bold border ${r.badgeClass}`}>
-                                            {g.score}%
-                                          </span>
-                                          <button
-                                            onClick={() => {
-                                              setForm({
-                                                studentId: g.studentId,
-                                                assessmentId: g.assessmentId,
-                                                score: g.score,
-                                                pointsEarned: g.pointsEarned,
-                                                feedback: g.feedback ?? "",
-                                              });
-                                              setEdit(g);
-                                              setOpen(true);
-                                            }}
-                                            className="p-1 rounded bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white"
-                                            title="Edit"
-                                          >
-                                            <Pencil size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
+                                {avgRating.label}
+                              </span>
+                            </div>
                           </td>
 
-                          {/* Quarters Completed Badges */}
-                          <td className="py-4 px-5">
-                            {sg.grades.length === 0 ? (
-                              <span className="text-xs text-slate-500 italic">No grades recorded yet</span>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {sg.grades.map((g) => {
-                                  const r = getScoreRating(g.score);
-                                  const shortLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
-                                  return (
-                                    <span
-                                      key={g.id}
-                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass}`}
-                                      title={`${g.assessmentTitle}: ${g.score}%`}
-                                    >
-                                      <span>{shortLabel}</span>
-                                      <span className="opacity-75">({g.score}%)</span>
-                                    </span>
-                                  );
-                                })}
-                                <span className="text-xs text-slate-400 font-medium ml-1">
-                                  • {sg.grades.length} recorded
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Average Score & Rating */}
-                          <td className="py-4 px-5">
-                            {sg.grades.length === 0 ? (
-                              <span className="text-xs text-slate-500">—</span>
-                            ) : (
-                              <div className="inline-flex flex-col">
-                                <span
-                                  className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-extrabold border ${avgRating.badgeClass}`}
-                                >
-                                  {avgRating.label}
-                                </span>
-                                <span className="text-[11px] text-slate-400 mt-1">
-                                  {avgRating.ratingText}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Actions / View Details */}
-                          <td className="py-4 px-5 text-right">
+                          {/* Action Button (single-line, non-wrapping) */}
+                          <td className="py-4 px-6 text-right whitespace-nowrap">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedStudentId(sg.studentId);
                               }}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-500/30 font-bold text-xs shadow transition cursor-pointer"
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/15 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition shadow-sm cursor-pointer"
                             >
                               <FileText size={14} />
-                              <span>View All Grades ({sg.grades.length}) →</span>
+                              <span>View Report Card →</span>
                             </button>
                           </td>
                         </tr>
@@ -658,7 +605,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
           )}
 
           {/* ========================================================= */}
-          {/* POPUP MODAL: SHOWS ALL GRADES FROM Q1 TO SUMMATIVE ASSESSMENT */}
+          {/* STUDENT REPORT CARD MODAL: QUARTER 1 TO SUMMATIVE ASSESSMENT */}
           {/* ========================================================= */}
           {activeStudent && (
             <div
@@ -669,11 +616,11 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 className="bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-950 border border-white/15 rounded-3xl p-6 md:p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Modal Header */}
+                {/* Header */}
                 <div className="flex items-start justify-between gap-4 mb-6 pb-5 border-b border-white/10">
                   <div className="flex items-center gap-4">
                     <div
-                      className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-white text-xl shadow-lg shrink-0"
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-white text-xl shadow-lg shrink-0 ring-2 ring-white/15"
                       style={{ backgroundColor: activeStudent.avatarColor || "#6366f1" }}
                     >
                       {activeStudent.studentName
@@ -689,7 +636,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                       </div>
                       <h2 className="text-2xl font-black text-white">{activeStudent.studentName}</h2>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs px-2 py-0.5 rounded bg-white/10 text-violet-300 font-mono font-bold">
+                        <span className="text-xs px-2.5 py-0.5 rounded-md bg-white/10 text-violet-300 font-mono font-bold">
                           {activeStudent.studentNumber}
                         </span>
                         <span className="text-xs text-slate-400">
@@ -709,7 +656,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 {/* Performance Summary Banner */}
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
-                    <span className="text-xs text-slate-400 block mb-1">Overall Average Score</span>
+                    <span className="text-xs text-slate-400 block mb-0.5">Overall Average Score</span>
                     <div className="flex items-center gap-3">
                       <span className="text-3xl font-black text-white">{activeStudent.averageScore}%</span>
                       {(() => {
@@ -722,127 +669,103 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                       })()}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setEdit(null);
-                        setForm({
-                          studentId: activeStudent.studentId,
-                          assessmentId: assessments[0]?.id ?? 1,
-                          score: 85,
-                          pointsEarned: 85,
-                          feedback: "",
-                        });
-                        setOpen(true);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Plus size={14} /> Log Another Grade
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      setEdit(null);
+                      setForm({
+                        studentId: activeStudent.studentId,
+                        assessmentId: assessments[0]?.id ?? 1,
+                        score: 85,
+                        pointsEarned: 85,
+                        feedback: "",
+                      });
+                      setOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-violet-600/30 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                  >
+                    <Plus size={14} /> Log Another Grade
+                  </button>
                 </div>
 
-                {/* Quarter by Quarter Breakdown (Q1 to Summative) */}
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                {/* Quarter Cards List */}
+                <div className="space-y-3.5">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                     <BookOpen size={14} className="text-violet-400" />
-                    All Assessments (Quarter 1 to Summative)
-                  </h3>
+                    Curriculum Assessments (Quarter 1 to Summative)
+                  </div>
 
-                  {activeStudent.grades.length === 0 ? (
-                    <div className="text-center py-10 p-6 rounded-2xl bg-white/5 border border-white/10">
-                      <p className="text-slate-400 text-sm">No grades recorded yet for this student.</p>
-                      <button
-                        onClick={() => {
-                          setEdit(null);
-                          setForm({
-                            studentId: activeStudent.studentId,
-                            assessmentId: assessments[0]?.id ?? 1,
-                            score: 85,
-                            pointsEarned: 85,
-                            feedback: "",
-                          });
-                          setOpen(true);
-                        }}
-                        className="mt-3 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-500 transition cursor-pointer"
+                  {activeStudent.grades.map((g) => {
+                    const rating = getScoreRating(g.score);
+                    const fb = formatLaymanFeedback(g.feedback);
+                    const order = getQuarterOrder(g.assessmentTitle, g.quarter);
+
+                    return (
+                      <div
+                        key={g.id}
+                        className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-violet-500/30 transition shadow-sm"
                       >
-                        Log First Grade
-                      </button>
-                    </div>
-                  ) : (
-                    activeStudent.grades.map((g, idx) => {
-                      const rating = getScoreRating(g.score);
-                      const fb = formatLaymanFeedback(g.feedback);
-                      const order = getQuarterOrder(g.assessmentTitle, g.quarter);
-
-                      return (
-                        <div
-                          key={g.id}
-                          className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-violet-500/30 transition shadow-sm"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                            <div className="flex items-center gap-2.5">
-                              <span className="w-7 h-7 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30">
-                                {order === 5 ? "S" : `Q${order}`}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
+                              {order === 5 ? "S" : `Q${order}`}
+                            </span>
+                            <div>
+                              <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
+                              <span className="text-[11px] text-slate-400">
+                                {order === 5
+                                  ? "Summative Assessment (Water Temple)"
+                                  : `Quarter ${order} Assessment`}
                               </span>
-                              <div>
-                                <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
-                                <span className="text-[11px] text-slate-400 font-medium">
-                                  {order === 5
-                                    ? "Summative Assessment (Water Temple)"
-                                    : `Quarter ${order} Curriculum Assessment`}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${rating.badgeClass}`}>
-                                {rating.label}
-                              </span>
-                              <div className="flex items-center gap-1 ml-2">
-                                <button
-                                  onClick={() => {
-                                    setForm({
-                                      studentId: g.studentId,
-                                      assessmentId: g.assessmentId,
-                                      score: g.score,
-                                      pointsEarned: g.pointsEarned,
-                                      feedback: g.feedback ?? "",
-                                    });
-                                    setEdit(g);
-                                    setOpen(true);
-                                  }}
-                                  className="p-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600 text-violet-200 hover:text-white transition cursor-pointer"
-                                  title="Edit Grade"
-                                >
-                                  <Pencil size={13} />
-                                </button>
-                                <button
-                                  onClick={() => remove(g.id)}
-                                  className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
-                                  title="Delete Grade"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
                             </div>
                           </div>
-
-                          {/* Remarks & Correct questions breakdown */}
-                          <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-400">Questions Answered:</span>
-                              <span className="font-semibold text-slate-200">{fb.preview}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${rating.badgeClass}`}>
+                              {rating.label}
+                            </span>
+                            <div className="flex items-center gap-1 ml-2">
+                              <button
+                                onClick={() => {
+                                  setForm({
+                                    studentId: g.studentId,
+                                    assessmentId: g.assessmentId,
+                                    score: g.score,
+                                    pointsEarned: g.pointsEarned,
+                                    feedback: g.feedback ?? "",
+                                  });
+                                  setEdit(g);
+                                  setOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600 text-violet-200 hover:text-white transition cursor-pointer"
+                                title="Edit Grade"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                onClick={() => remove(g.id)}
+                                className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
+                                title="Delete Grade"
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             </div>
-                            {g.feedback && (
-                              <div className="pt-1.5 border-t border-white/5 text-slate-300 leading-relaxed font-sans whitespace-pre-wrap">
-                                {g.feedback}
-                              </div>
-                            )}
                           </div>
                         </div>
-                      );
-                    })
-                  )}
+
+                        {/* Remarks & Feedback */}
+                        <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-400">Questions Answered:</span>
+                            <span className="font-semibold text-slate-200">{fb.preview}</span>
+                          </div>
+                          {g.feedback && (
+                            <div className="pt-2 border-t border-white/5 text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
+                              {g.feedback}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="mt-8 flex justify-end">
@@ -850,7 +773,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                     onClick={() => setSelectedStudentId(null)}
                     className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
                   >
-                    Done
+                    Close
                   </button>
                 </div>
               </div>

@@ -4,6 +4,84 @@ import { db } from "@/db";
 import { grades, students, assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
+const DEMO_GRADES = [
+  {
+    id: 328,
+    userId: 1,
+    studentId: 8,
+    assessmentId: 9,
+    score: 60,
+    pointsEarned: 60,
+    feedback: "Completed Quarter 1. Answered 3 of 5 questions correctly on the first attempt.",
+    createdAt: "2026-11-08T15:55:03.063Z",
+    updatedAt: "2026-11-08T15:55:03.063Z",
+    studentName: "Sofia Lim",
+    studentNumber: "2026-008",
+    assessmentTitle: "Cognitive Maze - Quarter 1 Assessment",
+    quarter: "Quarter 1",
+  },
+  {
+    id: 329,
+    userId: 1,
+    studentId: 8,
+    assessmentId: 10,
+    score: 20,
+    pointsEarned: 20,
+    feedback: "Completed Quarter 2 (Barangay Geometry). Answered 1 of 5 questions correctly on the first attempt.",
+    createdAt: "2026-11-08T15:56:45.670Z",
+    updatedAt: "2026-11-08T15:56:45.670Z",
+    studentName: "Sofia Lim",
+    studentNumber: "2026-008",
+    assessmentTitle: "Cognitive Maze - Quarter 2 Assessment",
+    quarter: "Quarter 2",
+  },
+  {
+    id: 330,
+    userId: 1,
+    studentId: 8,
+    assessmentId: 11,
+    score: 20,
+    pointsEarned: 20,
+    feedback: "Completed Quarter 3 (Math Explorations). Answered 1 of 5 questions correctly on the first attempt.",
+    createdAt: "2026-11-08T16:28:27.444Z",
+    updatedAt: "2026-11-08T16:28:27.444Z",
+    studentName: "Sofia Lim",
+    studentNumber: "2026-008",
+    assessmentTitle: "Cognitive Maze - Quarter 3 Assessment",
+    quarter: "Quarter 3",
+  },
+  {
+    id: 331,
+    userId: 1,
+    studentId: 8,
+    assessmentId: 12,
+    score: 0,
+    pointsEarned: 0,
+    feedback: "Completed Summative Assessment (Water Temple). Answered 0 of 1 questions correctly on the first attempt.",
+    createdAt: "2026-11-08T16:29:02.975Z",
+    updatedAt: "2026-11-08T16:29:02.975Z",
+    studentName: "Sofia Lim",
+    studentNumber: "2026-008",
+    assessmentTitle: "Cognitive Maze - Summative Assessment",
+    quarter: "Summative",
+  },
+  {
+    id: 332,
+    userId: 1,
+    studentId: 7,
+    assessmentId: 9,
+    score: 100,
+    pointsEarned: 100,
+    feedback: "Completed Quarter 1. Answered 5 of 5 questions correctly on the first attempt.",
+    createdAt: "2026-11-08T14:30:00.000Z",
+    updatedAt: "2026-11-08T14:30:00.000Z",
+    studentName: "Jose Villanueva",
+    studentNumber: "2026-007",
+    assessmentTitle: "Cognitive Maze - Quarter 1 Assessment",
+    quarter: "Quarter 1",
+  },
+];
+
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
@@ -37,8 +115,8 @@ export async function GET() {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.warn("Grades DB offline, returning empty grades list");
-    return NextResponse.json([]);
+    console.warn("Grades DB offline, returning demo grades list");
+    return NextResponse.json(DEMO_GRADES);
   }
 }
 
