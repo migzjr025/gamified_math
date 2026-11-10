@@ -68,15 +68,15 @@ const DEMO_GRADES = [
   {
     id: 332,
     userId: 1,
-    studentId: 7,
+    studentId: 4,
     assessmentId: 9,
     score: 100,
     pointsEarned: 100,
     feedback: "Completed Quarter 1. Answered 5 of 5 questions correctly on the first attempt.",
     createdAt: "2026-11-08T14:30:00.000Z",
     updatedAt: "2026-11-08T14:30:00.000Z",
-    studentName: "Jose Villanueva",
-    studentNumber: "2026-007",
+    studentName: "Ana Mendoza",
+    studentNumber: "2026-004",
     assessmentTitle: "Cognitive Maze - Quarter 1 Assessment",
     quarter: "Quarter 1",
   },
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
         quarter: units.quarter,
       })
       .from(grades)
-      .leftJoin(students, eq(grades.studentId, students.id))
+      .innerJoin(students, eq(grades.studentId, students.id))
       .leftJoin(assessments, eq(grades.assessmentId, assessments.id))
       .leftJoin(units, eq(assessments.unitId, units.id));
 
@@ -231,35 +231,96 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  let body: any;
+  let body: any = {};
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON request body." }, { status: 400 });
+    // Body is optional if query params are supplied
   }
 
   try {
     const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
-    const id = Number(body.id);
 
-    if (!id || isNaN(id) || id <= 0) {
-      return NextResponse.json({ error: "A valid Grade ID is required." }, { status: 400 });
+    const { searchParams } = new URL(req.url);
+    const idParam = searchParams.get("id") || body?.id;
+    const studentIdParam = searchParams.get("studentId") || body?.studentId;
+    const cleanOrphaned = searchParams.get("cleanOrphaned") === "true" || body?.cleanOrphaned === true;
+
+    if (cleanOrphaned) {
+      try {
+        const allStudents = await db.select({ id: students.id }).from(students);
+        const validStudentIds = new Set(allStudents.map((s) => s.id));
+        const allGrades = await db.select({ id: grades.id, studentId: grades.studentId }).from(grades);
+        const orphaned = allGrades.filter((g) => !validStudentIds.has(g.studentId));
+
+        for (const item of orphaned) {
+          await db.delete(grades).where(eq(grades.id, item.id));
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Cleaned up ${orphaned.length} orphaned grades.`,
+          deletedCount: orphaned.length,
+        });
+      } catch (cleanErr) {
+        console.warn("Orphaned grades cleanup error:", cleanErr);
+        return NextResponse.json({ success: true, deletedCount: 0 });
+      }
     }
 
-    const whereClause = isAdmin
-      ? eq(grades.id, id)
-      : and(eq(grades.id, id), eq(grades.userId, userId));
+    if (studentIdParam) {
+      const studentId = Number(studentIdParam);
+      if (!studentId || isNaN(studentId) || studentId <= 0) {
+        return NextResponse.json({ error: "A valid positive studentId is required." }, { status: 400 });
+      }
 
-    try {
-      await db.delete(grades).where(whereClause);
-    } catch {
-      console.warn("Grades DB offline on delete, removing from memory fallback list");
+      const whereClause = isAdmin
+        ? eq(grades.studentId, studentId)
+        : and(eq(grades.studentId, studentId), eq(grades.userId, userId));
+
+      try {
+        await db.delete(grades).where(whereClause);
+      } catch (delErr) {
+        console.warn("Grades delete by studentId error:", delErr);
+      }
+
+      if (globalForGrades.__inMemoryGrades) {
+        globalForGrades.__inMemoryGrades = globalForGrades.__inMemoryGrades.filter(
+          (g) => g.studentId !== studentId
+        );
+      }
+
+      return NextResponse.json({ success: true, deletedStudentId: studentId });
+    }
+
+    if (idParam) {
+      const id = Number(idParam);
+      if (!id || isNaN(id) || id <= 0) {
+        return NextResponse.json({ error: "A valid Grade ID is required." }, { status: 400 });
+      }
+
+      const whereClause = isAdmin
+        ? eq(grades.id, id)
+        : and(eq(grades.id, id), eq(grades.userId, userId));
+
+      try {
+        await db.delete(grades).where(whereClause);
+      } catch {
+        console.warn("Grades DB offline on delete, removing from memory fallback list");
+      }
+
       const list = getFallbackGrades();
-      globalForGrades.__inMemoryGrades = list.filter(g => g.id !== id);
+      globalForGrades.__inMemoryGrades = list.filter((g) => g.id !== id);
+
+      return NextResponse.json({ success: true, deletedId: id });
     }
-    return NextResponse.json({ success: true });
+
+    return NextResponse.json(
+      { error: "Missing parameter: provide id, studentId, or cleanOrphaned=true" },
+      { status: 400 }
+    );
   } catch (error) {
     console.error("Grades delete error", error);
     return NextResponse.json({ error: "Failed to delete grade" }, { status: 500 });

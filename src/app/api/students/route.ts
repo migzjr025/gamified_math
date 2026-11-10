@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
-import { students } from "@/db/schema";
+import { students, gameResults, grades, studentAchievements } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
 function computeAge(birthdayStr?: string | null): number | null {
@@ -299,17 +299,49 @@ export async function DELETE(req: NextRequest) {
     const isAdmin = sessionUser.role === "admin";
     const body = await req.json();
 
+    const targetId = Number(body.id);
+    if (!targetId || isNaN(targetId) || targetId <= 0) {
+      return NextResponse.json({ error: "A valid positive student ID is required." }, { status: 400 });
+    }
+
     const whereClause = isAdmin
-      ? eq(students.id, body.id)
-      : and(eq(students.id, body.id), eq(students.userId, userId));
+      ? eq(students.id, targetId)
+      : and(eq(students.id, targetId), eq(students.userId, userId));
 
     try {
+      // Explicitly delete associated records first to prevent orphaned data in PostgreSQL
+      try {
+        await db.delete(gameResults).where(eq(gameResults.studentId, targetId));
+      } catch (childErr) {
+        console.warn("Could not cascade delete gameResults:", childErr);
+      }
+      try {
+        await db.delete(grades).where(eq(grades.studentId, targetId));
+      } catch (childErr) {
+        console.warn("Could not cascade delete grades:", childErr);
+      }
+      try {
+        await db.delete(studentAchievements).where(eq(studentAchievements.studentId, targetId));
+      } catch (childErr) {
+        console.warn("Could not cascade delete studentAchievements:", childErr);
+      }
+
       await db.delete(students).where(whereClause);
     } catch {
       console.warn("Students DB offline during delete, removing from memory fallback list");
-      const targetId = Number(body.id);
       globalForStudents.__inMemoryStudents = getFallbackStudents().filter((s) => s.id !== targetId);
     }
+
+    // Also purge from in-memory fallback grades if present
+    const globalForGrades = globalThis as typeof globalThis & {
+      __inMemoryGrades?: any[];
+    };
+    if (globalForGrades.__inMemoryGrades) {
+      globalForGrades.__inMemoryGrades = globalForGrades.__inMemoryGrades.filter(
+        (g) => g.studentId !== targetId
+      );
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Students delete error", error);

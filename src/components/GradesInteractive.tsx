@@ -270,6 +270,11 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const cleanName = (g.studentName || `Student #${g.studentId}`).trim();
       const lookupMeta = studentMetaMap.get(g.studentId) || studentByName.get(cleanName.toLowerCase());
 
+      // If registered students are loaded, exclude any orphaned records from deleted students
+      if (students.length > 0 && !lookupMeta) {
+        return;
+      }
+
       const canonicalName = lookupMeta?.fullName || cleanName;
       const canonicalKey = canonicalName.toLowerCase();
       const canonicalId = lookupMeta?.id || g.studentId;

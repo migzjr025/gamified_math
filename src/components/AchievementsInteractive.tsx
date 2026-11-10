@@ -54,8 +54,11 @@ export default function AchievementsClient({ userName, role }: { userName: strin
     void loadLeaderboard();
   }, []);
 
+  const activeStudentIds = new Set(students.map((s) => s.id));
+  const activeResults = results.filter((r) => activeStudentIds.has(r.studentId));
+
   const totals = new Map<number, { points: number; correct: number; percentage: number; plays: number }>();
-  for (const result of results) {
+  for (const result of activeResults) {
     const total = totals.get(result.studentId) ?? { points: 0, correct: 0, percentage: 0, plays: 0 };
     total.points += Number(result.score ?? 0);
     total.correct += Number(result.correctAnswers ?? 0);
@@ -82,9 +85,9 @@ export default function AchievementsClient({ userName, role }: { userName: strin
       .includes(query.toLowerCase()),
   );
   const topThree = leaderboard.slice(0, 3);
-  const totalPlays = results.length;
+  const totalPlays = activeResults.length;
   const classAverage = totalPlays
-    ? results.reduce((sum, result) => sum + Number(result.percentage ?? 0), 0) / totalPlays
+    ? activeResults.reduce((sum, result) => sum + Number(result.percentage ?? 0), 0) / totalPlays
     : 0;
   const rankStyle = [
     "border-amber-300/40 bg-amber-300/10 text-amber-200",

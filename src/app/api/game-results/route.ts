@@ -4,9 +4,9 @@ import { db } from "@/db";
 import { gameResults, grades, students } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req?: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = req ? await getSessionUser(req) : await getSessionUser();
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
 
@@ -26,7 +26,7 @@ export async function GET() {
         studentName: students.fullName,
       })
       .from(gameResults)
-      .leftJoin(students, eq(gameResults.studentId, students.id))
+      .innerJoin(students, eq(gameResults.studentId, students.id))
       .orderBy(gameResults.id);
 
     const data = isAdmin
@@ -165,4 +165,93 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to save game result" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    // Body is optional if query params are supplied
+  }
+
+  try {
+    const sessionUser = await getSessionUser(req);
+    const userId = sessionUser?.id || 1;
+    const isAdmin = sessionUser?.role === "admin";
+
+    const { searchParams } = new URL(req.url);
+    const idParam = searchParams.get("id") || body?.id;
+    const studentIdParam = searchParams.get("studentId") || body?.studentId;
+    const cleanOrphaned = searchParams.get("cleanOrphaned") === "true" || body?.cleanOrphaned === true;
+
+    if (cleanOrphaned) {
+      try {
+        const allStudents = await db.select({ id: students.id }).from(students);
+        const validStudentIds = new Set(allStudents.map((s) => s.id));
+        const allResults = await db
+          .select({ id: gameResults.id, studentId: gameResults.studentId })
+          .from(gameResults);
+        const orphaned = allResults.filter((r) => !validStudentIds.has(r.studentId));
+
+        for (const item of orphaned) {
+          await db.delete(gameResults).where(eq(gameResults.id, item.id));
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Cleaned up ${orphaned.length} orphaned game results.`,
+          deletedCount: orphaned.length,
+        });
+      } catch (cleanErr) {
+        console.warn("Orphaned game results cleanup error:", cleanErr);
+        return NextResponse.json({ success: true, deletedCount: 0 });
+      }
+    }
+
+    if (studentIdParam) {
+      const studentId = Number(studentIdParam);
+      if (!studentId || isNaN(studentId) || studentId <= 0) {
+        return NextResponse.json({ error: "A valid positive studentId is required." }, { status: 400 });
+      }
+
+      const whereClause = isAdmin
+        ? eq(gameResults.studentId, studentId)
+        : and(eq(gameResults.studentId, studentId), eq(gameResults.userId, userId));
+
+      try {
+        await db.delete(gameResults).where(whereClause);
+      } catch (delErr) {
+        console.warn("Game results delete by studentId error:", delErr);
+      }
+      return NextResponse.json({ success: true, deletedStudentId: studentId });
+    }
+
+    if (idParam) {
+      const id = Number(idParam);
+      if (!id || isNaN(id) || id <= 0) {
+        return NextResponse.json({ error: "A valid positive game result id is required." }, { status: 400 });
+      }
+
+      const whereClause = isAdmin
+        ? eq(gameResults.id, id)
+        : and(eq(gameResults.id, id), eq(gameResults.userId, userId));
+
+      try {
+        await db.delete(gameResults).where(whereClause);
+      } catch (delErr) {
+        console.warn("Game results delete by id error:", delErr);
+      }
+      return NextResponse.json({ success: true, deletedId: id });
+    }
+
+    return NextResponse.json(
+      { error: "Missing parameter: provide id, studentId, or cleanOrphaned=true" },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error("Game results delete error:", error);
+    return NextResponse.json({ error: "Failed to delete game result" }, { status: 500 });
+  }
+}
+
 
