@@ -1,8 +1,22 @@
 import { db } from "@/db";
 import { users, students, units, assessments, grades, achievements, studentAchievements, gameQuestions, gameResults } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export async function seedData() {
+  // Ensure table columns and migrations are applied automatically
+  try {
+    await db.execute(sql`
+      ALTER TABLE students ADD COLUMN IF NOT EXISTS birthday varchar(50);
+      ALTER TABLE students ADD COLUMN IF NOT EXISTS age integer;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS grade varchar(50) DEFAULT '';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS approved boolean DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login_completed boolean DEFAULT false;
+    `);
+  } catch (migErr) {
+    console.warn("Auto-migration schema patch handled:", migErr);
+  }
+
   // Teacher
   const existingUsers = await db.select().from(users).limit(1);
   if (existingUsers.length === 0) {
