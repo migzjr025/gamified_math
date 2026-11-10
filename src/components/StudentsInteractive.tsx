@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, ChangeEvent } from "react";
-import { Plus, Trash2, Pencil, Search, Users, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle, Calendar } from "lucide-react";
+import { Plus, Trash2, Pencil, Search, Users, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
 import SidebarNav from "@/components/SidebarNav";
 
@@ -204,6 +204,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
   const [importLoading, setImportLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [importMessage, setImportMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [formError, setFormError] = useState("");
 
   const STORAGE_KEY = "matatag_student_roster_v1";
@@ -705,7 +706,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                           setFormError("");
                           setOpen(true);
                         }} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200" aria-label="Edit"><Pencil size={14} /></button>
-                        <button onClick={() => remove(s.id)} className="p-2 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300" aria-label="Delete"><Trash2 size={14} /></button>
+                        <button onClick={() => setDeleteTarget(s)} className="p-2 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300 transition cursor-pointer" aria-label="Delete Student" title="Delete Student"><Trash2 size={14} /></button>
                       </div>
                     </div>
                     <h3 className="text-lg font-extrabold text-white mb-0.5 truncate">{s.fullName}</h3>
@@ -869,6 +870,45 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                 <div className="mt-6 flex gap-3">
                   <button onClick={() => { setOpen(false); setEdit(null); }} className="flex-1 py-3 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition">Cancel</button>
                   <button onClick={save} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-400 text-white font-bold shadow-lg hover:scale-[1.03] transition">{edit ? "Save" : "Create"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DELETE CONFIRMATION MODAL */}
+          {deleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">Delete Student Profile?</h3>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-white">{deleteTarget.fullName}</strong> ({normalizeStudentId(deleteTarget.studentId)})? This will also remove their associated grade records. This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const targetId = deleteTarget.id;
+                      setDeleteTarget(null);
+                      remove(targetId);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    Delete Student
+                  </button>
                 </div>
               </div>
             </div>

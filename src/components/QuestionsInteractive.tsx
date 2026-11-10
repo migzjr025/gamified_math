@@ -57,6 +57,7 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
   const [edit, setEdit] = useState<Question | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Question | null>(null);
   const [seedingUnits, setSeedingUnits] = useState(false);
 
   async function load() {
@@ -195,7 +196,6 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
   }
 
   async function remove(id: number) {
-    if (!confirm("Are you sure you want to delete this question?")) return;
     await fetch("/api/questions", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     load();
   }
@@ -605,9 +605,10 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                           <Pencil size={15} />
                         </button>
                         <button
-                          onClick={() => remove(item.id)}
+                          onClick={() => setDeleteTarget(item)}
                           className="p-2.5 rounded-xl bg-white/10 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
                           aria-label="Delete Question"
+                          title="Delete Question"
                         >
                           <Trash2 size={15} />
                         </button>
@@ -831,6 +832,48 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                     }`}
                   >
                     {edit ? "Save Changes" : isQuarterOverLimit ? "Limit Reached (10/10)" : `Create for ${form.quarter}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DELETE CONFIRMATION MODAL */}
+          {deleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">Delete Question?</h3>
+                <p className="text-slate-300 text-sm mb-4 leading-relaxed">
+                  Are you sure you want to delete this question? This action cannot be undone.
+                </p>
+                <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-xs text-violet-200 mb-6 line-clamp-3">
+                  &ldquo;{deleteTarget.prompt}&rdquo;
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = deleteTarget.id;
+                      setDeleteTarget(null);
+                      remove(id);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    Delete Question
                   </button>
                 </div>
               </div>

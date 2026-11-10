@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, Pencil, Search, BookOpen, Sparkles, Layers, Filter, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Pencil, Search, BookOpen, Sparkles, Layers, Filter, AlertCircle, AlertTriangle } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
 
 interface Unit {
@@ -39,6 +39,7 @@ export default function UnitsClient({ userName, role }: { userName: string; role
   const [form, setForm] = useState(defaultForm);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null);
   const [seeding, setSeeding] = useState(false);
 
   async function load() {
@@ -138,9 +139,6 @@ export default function UnitsClient({ userName, role }: { userName: string; role
   }
 
   async function remove(id: number) {
-    if (!confirm("Are you sure you want to delete this curriculum unit? This will also remove associated questions.")) {
-      return;
-    }
     try {
       const res = await fetch("/api/units", {
         method: "DELETE",
@@ -483,7 +481,7 @@ export default function UnitsClient({ userName, role }: { userName: string; role
                             <Pencil size={15} />
                           </button>
                           <button
-                            onClick={() => remove(u.id)}
+                            onClick={() => setDeleteTarget(u)}
                             className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
                             title="Delete Unit"
                             aria-label="Delete Unit"
@@ -674,6 +672,45 @@ export default function UnitsClient({ userName, role }: { userName: string; role
                     className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 text-white font-bold shadow-lg shadow-violet-900/40 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 transition cursor-pointer"
                   >
                     {saving ? "Saving..." : edit ? "Save Changes" : "Create Unit"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DELETE CONFIRMATION MODAL */}
+          {deleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">Delete Curriculum Unit?</h3>
+                <p className="text-slate-300 text-sm mb-4 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-white">{deleteTarget.code}</strong> &mdash; <span className="text-violet-200">{deleteTarget.title}</span>? This will also remove any questions linked to this unit.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = deleteTarget.id;
+                      setDeleteTarget(null);
+                      remove(id);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    Delete Unit
                   </button>
                 </div>
               </div>

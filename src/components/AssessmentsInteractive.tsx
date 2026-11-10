@@ -16,6 +16,7 @@ export default function AssessmentsClient({ userName, role }: { userName: string
   const [units, setUnits] = useState<{id:number; title:string; code:string}[]>([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Assessment | null>(null);
   const [edit, setEdit] = useState<Assessment | null>(null);
   const [form, setForm] = useState({ title: "", unitId: 1, type: "quiz", totalPoints: 100, dueDate: "" });
 
@@ -80,7 +81,6 @@ export default function AssessmentsClient({ userName, role }: { userName: string
   }
 
   async function remove(id: number) {
-    if (!window.confirm("Are you sure you want to delete this assessment?")) return;
     try {
       const res = await fetch("/api/assessments", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       if (!res.ok) {
@@ -126,7 +126,7 @@ export default function AssessmentsClient({ userName, role }: { userName: string
             : filtered.length === 0 ? <div className="text-center py-24 glass-card rounded-3xl"><ClipboardCheck size={48} className="mx-auto text-slate-600 mb-4" /><h3 className="text-xl font-extrabold text-white mb-2">No assessments yet</h3><button onClick={() => { setEdit(null); setForm({ title: "", unitId: units[0]?.id ?? 1, type: "quiz", totalPoints: 100, dueDate: "" }); setOpen(true); }} className="px-5 py-2.5 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-500 transition">Add Assessment</button></div>
             : <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{filtered.map(a => (
               <div key={a.id} className="glass-card rounded-2xl p-6 hover:scale-[1.01] transition-all duration-200 relative group">
-                <div className="flex items-start justify-between mb-3"><span className="text-xs font-extrabold text-amber-300 bg-amber-400/15 px-2 py-0.5 rounded-md">{a.type}</span><div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setForm({ ...a, dueDate: a.dueDate ? new Date(a.dueDate).toISOString().slice(0,10) : "" }); setEdit(a); setOpen(true); }} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200" aria-label="Edit"><Pencil size={14} /></button><button onClick={() => remove(a.id)} className="p-2 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300" aria-label="Delete"><Trash2 size={14} /></button></div></div>
+                <div className="flex items-start justify-between mb-3"><span className="text-xs font-extrabold text-amber-300 bg-amber-400/15 px-2 py-0.5 rounded-md">{a.type}</span><div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setForm({ ...a, dueDate: a.dueDate ? new Date(a.dueDate).toISOString().slice(0,10) : "" }); setEdit(a); setOpen(true); }} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200" aria-label="Edit"><Pencil size={14} /></button><button onClick={() => setDeleteTarget(a)} className="p-2 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300 transition cursor-pointer" aria-label="Delete Assessment" title="Delete Assessment"><Trash2 size={14} /></button></div></div>
                 <h3 className="text-lg font-extrabold text-white mb-1 truncate">{a.title}</h3>
                 <p className="text-xs text-slate-400 mb-3">{a.unitTitle ?? "Unknown Unit"} ({a.unitCode ?? ""}) · {a.totalPoints} pts</p>
                 <p className="text-sm text-slate-300">Due: {a.dueDate ? new Date(a.dueDate).toLocaleDateString() : "Not set"}</p>
@@ -155,6 +155,45 @@ export default function AssessmentsClient({ userName, role }: { userName: string
               </div>
             </div>
           </div>}
+
+          {/* DELETE CONFIRMATION MODAL */}
+          {deleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">Delete Assessment?</h3>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-white">{deleteTarget.title}</strong> ({deleteTarget.type}, {deleteTarget.totalPoints} pts)? This will remove this assessment and associated student grades. This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const id = deleteTarget.id;
+                      setDeleteTarget(null);
+                      remove(id);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                  >
+                    Delete Assessment
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
