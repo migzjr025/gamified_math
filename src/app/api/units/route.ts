@@ -30,8 +30,8 @@ export async function GET() {
     }
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error("Units fetch error", error);
-    return NextResponse.json([], { status: 500 });
+    console.warn("Units DB offline, returning default units");
+    return NextResponse.json(DEFAULT_UNITS);
   }
 }
 

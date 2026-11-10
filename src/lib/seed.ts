@@ -18,14 +18,14 @@ export async function seedData() {
   const existingStudents = await db.select().from(students).limit(1);
   if (existingStudents.length === 0) {
     const studentData = [
-      { studentId: "S-2024-001", fullName: "Juan Dela Cruz", gradeLevel: "Grade 2", section: "A", gender: "Male", avatarColor: "#f97316" },
-      { studentId: "S-2024-002", fullName: "Maria Santos", gradeLevel: "Grade 2", section: "A", gender: "Female", avatarColor: "#ec4899" },
-      { studentId: "S-2024-003", fullName: "Pedro Garcia", gradeLevel: "Grade 2", section: "B", gender: "Male", avatarColor: "#3b82f6" },
-      { studentId: "S-2024-004", fullName: "Ana Mendoza", gradeLevel: "Grade 2", section: "B", gender: "Female", avatarColor: "#10b981" },
-      { studentId: "S-2024-005", fullName: "Carlos Reyes", gradeLevel: "Grade 1", section: "A", gender: "Male", avatarColor: "#8b5cf6" },
-      { studentId: "S-2024-006", fullName: "Elena Ramos", gradeLevel: "Grade 1", section: "A", gender: "Female", avatarColor: "#f43f5e" },
-      { studentId: "S-2024-007", fullName: "Jose Villanueva", gradeLevel: "Grade 2", section: "B", gender: "Male", avatarColor: "#14b8a6" },
-      { studentId: "S-2024-008", fullName: "Sofia Lim", gradeLevel: "Grade 2", section: "A", gender: "Female", avatarColor: "#eab308" },
+      { studentId: "2026-001", fullName: "Juan Dela Cruz", birthday: "2018-05-14", age: 8, gradeLevel: "Grade 2", section: "A", gender: "Male", avatarColor: "#f97316" },
+      { studentId: "2026-002", fullName: "Maria Santos", birthday: "2018-09-20", age: 8, gradeLevel: "Grade 2", section: "A", gender: "Female", avatarColor: "#ec4899" },
+      { studentId: "2026-003", fullName: "Pedro Garcia", birthday: "2018-02-11", age: 8, gradeLevel: "Grade 2", section: "B", gender: "Male", avatarColor: "#3b82f6" },
+      { studentId: "2026-004", fullName: "Ana Mendoza", birthday: "2018-11-05", age: 7, gradeLevel: "Grade 2", section: "B", gender: "Female", avatarColor: "#10b981" },
+      { studentId: "2026-005", fullName: "Carlos Reyes", birthday: "2019-04-18", age: 7, gradeLevel: "Grade 1", section: "A", gender: "Male", avatarColor: "#8b5cf6" },
+      { studentId: "2026-006", fullName: "Elena Ramos", birthday: "2019-08-30", age: 7, gradeLevel: "Grade 1", section: "A", gender: "Female", avatarColor: "#f43f5e" },
+      { studentId: "2026-007", fullName: "Jose Villanueva", birthday: "2018-07-22", age: 8, gradeLevel: "Grade 2", section: "B", gender: "Male", avatarColor: "#14b8a6" },
+      { studentId: "2026-008", fullName: "Sofia Lim", birthday: "2018-12-14", age: 7, gradeLevel: "Grade 2", section: "A", gender: "Female", avatarColor: "#eab308" },
     ];
 
     for (const s of studentData) {

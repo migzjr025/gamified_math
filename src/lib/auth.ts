@@ -12,13 +12,19 @@ export async function getSessionUser() {
     const user = JSON.parse(session.value);
     const dbUser = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
     if (dbUser.length === 0) {
-      return user.email === "teacher@matatag.edu.ph" ? { ...user, password: undefined } : null;
+      if (user.email === "teacher@matatag.edu.ph" || user.email === "admin@matatag.edu.ph") {
+        return { ...user, password: undefined };
+      }
+      return null;
     }
     return { ...dbUser[0], password: undefined };
   } catch {
     try {
       const fallbackUser = JSON.parse(session.value);
-      return fallbackUser.email === "teacher@matatag.edu.ph" ? { ...fallbackUser, password: undefined } : null;
+      if (fallbackUser.email === "teacher@matatag.edu.ph" || fallbackUser.email === "admin@matatag.edu.ph") {
+        return { ...fallbackUser, password: undefined };
+      }
+      return null;
     } catch {
       return null;
     }

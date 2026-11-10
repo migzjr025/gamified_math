@@ -38,6 +38,8 @@ export const students = pgTable("students", {
   userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   studentId: varchar("student_id", { length: 50 }).notNull().unique(),
   fullName: varchar("full_name", { length: 255 }).notNull(),
+  birthday: varchar("birthday", { length: 50 }),
+  age: integer("age"),
   gradeLevel: varchar("grade_level", { length: 50 }).notNull(),
   section: varchar("section", { length: 50 }).notNull(),
   gender: varchar("gender", { length: 20 }).notNull(),

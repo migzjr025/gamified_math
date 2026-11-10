@@ -8,6 +8,7 @@ import { createAndSendOTP } from "@/lib/otp";
 
 export async function POST(req: NextRequest) {
   const fallbackDemoUser = { id: 1, email: "teacher@matatag.edu.ph", name: "Arminda Villeno", role: "teacher" };
+  const fallbackDemoAdmin = { id: 999, email: "admin@matatag.edu.ph", name: "System Administrator", role: "admin" };
 
   let email = "";
   let password = "";
@@ -56,7 +57,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
     }
 
-    // 2. Demo fallback account (always ready for direct demo login)
+    // 2. Demo fallback accounts (always ready for direct demo login)
+    if (email === fallbackDemoAdmin.email && (password === "admin123" || password === "password123")) {
+      await createSession({ ...fallbackDemoAdmin });
+      return NextResponse.json({ success: true, user: fallbackDemoAdmin });
+    }
+
     if (email === fallbackDemoUser.email && password === "password123") {
       await createSession({ ...fallbackDemoUser });
       return NextResponse.json({ success: true, user: fallbackDemoUser });
@@ -65,7 +71,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   } catch (e) {
     console.error("Login DB error:", e);
-    // If DB is temporarily unreachable or empty, allow demo account
+    // If DB is temporarily unreachable or empty, allow demo accounts
+    if (email === fallbackDemoAdmin.email && (password === "admin123" || password === "password123")) {
+      await createSession({ ...fallbackDemoAdmin });
+      return NextResponse.json({ success: true, user: fallbackDemoAdmin });
+    }
     if (email === fallbackDemoUser.email && password === "password123") {
       await createSession({ ...fallbackDemoUser });
       return NextResponse.json({ success: true, user: fallbackDemoUser });

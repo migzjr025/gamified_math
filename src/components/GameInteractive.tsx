@@ -47,31 +47,43 @@ export default function GameInteractive({ userName, role }: { userName: string; 
   const [showItemReview, setShowItemReview] = useState(true);
   const [challengeSeed, setChallengeSeed] = useState(0);
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [questionsRes, studentsRes, assessmentsRes] = await Promise.all([
-        fetch("/api/questions"),
-        fetch("/api/students"),
-        fetch("/api/assessments"),
-      ]);
+      try {
+        const [questionsRes, studentsRes, assessmentsRes] = await Promise.all([
+          fetch("/api/questions"),
+          fetch("/api/students"),
+          fetch("/api/assessments"),
+        ]);
 
-      const questionData = await questionsRes.json();
-      const studentData = await studentsRes.json();
-      const assessmentData = await assessmentsRes.json();
+        const questionData = questionsRes.ok ? await questionsRes.json() : [];
+        const studentData = studentsRes.ok ? await studentsRes.json() : [];
+        const assessmentData = assessmentsRes.ok ? await assessmentsRes.json() : [];
 
-      setQuestions(questionData);
-      setStudents(studentData);
-      setAssessments(assessmentData);
-      if (studentData[0]) setSelectedStudentId(studentData[0].id);
-      setLoading(false);
+        const safeQuestions = Array.isArray(questionData) ? questionData : [];
+        const safeStudents = Array.isArray(studentData) ? studentData : [];
+        const safeAssessments = Array.isArray(assessmentData) ? assessmentData : [];
+
+        setQuestions(safeQuestions);
+        setStudents(safeStudents);
+        setAssessments(safeAssessments);
+        if (safeStudents[0]) setSelectedStudentId(safeStudents[0].id);
+      } catch (err) {
+        console.error("Game load error:", err);
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
   }, []);
 
   const filteredQuestions = useMemo(() => {
-    return [...questions]
+    const list = Array.isArray(questions) ? questions : [];
+    return [...list]
       .filter((question) => question.gradeLevel === selectedGrade && (question as any).isActive !== false)
       .sort((left, right) => {
         const leftKey = (left.id * 31 + challengeSeed * 17) % 1009;
@@ -85,13 +97,14 @@ export default function GameInteractive({ userName, role }: { userName: string; 
 
   const submitQuiz = async () => {
     setSaving(true);
+    setSubmitError(null);
     const diag = generateDiagnosis(filteredQuestions, answers);
     setDiagnosis(diag);
     setSubmitted(true);
 
     try {
       const assessmentId = assessments[0]?.id ?? 1;
-      await fetch("/api/game-results", {
+      const res = await fetch("/api/game-results", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -105,8 +118,12 @@ export default function GameInteractive({ userName, role }: { userName: string; 
           feedback: diag.detailedFeedback,
         }),
       });
+      if (!res.ok) {
+        setSubmitError("Quiz results evaluated locally. Note: Cloud database recording was unavailable.");
+      }
     } catch (err) {
-      console.error("Failed to save game result", err);
+      console.warn("Failed to record game result to cloud", err);
+      setSubmitError("Quiz results evaluated locally. Note: Cloud database recording was unavailable.");
     } finally {
       setSaving(false);
     }

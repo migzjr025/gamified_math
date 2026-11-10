@@ -16,6 +16,11 @@ export const pool =
     ssl: !isLocalDb ? { rejectUnauthorized: false } : undefined,
   });
 
+// Prevent unhandled error event from crashing the Node.js process when an idle DB client disconnects
+pool.on("error", (err) => {
+  console.warn("PostgreSQL Pool idle client warning (handled):", err.message || err);
+});
+
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__arenaNextJsPostgresqlPool = pool;
 }
