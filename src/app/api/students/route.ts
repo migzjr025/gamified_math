@@ -29,6 +29,30 @@ const DEMO_STUDENTS = [
   { id: 8, studentId: "2026-008", fullName: "Sofia Lim", birthday: "2018-12-14", age: 7, gradeLevel: "Grade 2", section: "A", gender: "Female", avatarColor: "#eab308" },
 ];
 
+export interface InMemStudent {
+  id: number;
+  studentId: string;
+  fullName: string;
+  birthday?: string | null;
+  age?: number | null;
+  gradeLevel: string;
+  section: string;
+  gender: string;
+  avatarColor: string;
+  userId?: number;
+}
+
+const globalForStudents = globalThis as typeof globalThis & {
+  __inMemoryStudents?: InMemStudent[];
+};
+
+function getFallbackStudents(): InMemStudent[] {
+  if (!globalForStudents.__inMemoryStudents) {
+    globalForStudents.__inMemoryStudents = [...DEMO_STUDENTS];
+  }
+  return globalForStudents.__inMemoryStudents;
+}
+
 function normalizeStudentId(rawId: string | null | undefined, fallbackIndex: number = 0): string {
   let id = String(rawId || "").trim();
   if (!id) {
@@ -73,10 +97,10 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json(enriched.length > 0 ? enriched : DEMO_STUDENTS);
+    return NextResponse.json(enriched.length > 0 ? enriched : getFallbackStudents());
   } catch (error) {
     console.warn("Students DB offline, using demo fallback data");
-    return NextResponse.json(DEMO_STUDENTS);
+    return NextResponse.json(getFallbackStudents());
   }
 }
 
@@ -153,15 +177,15 @@ export async function POST(req: NextRequest) {
           error: `Student ID "${studentId}" is already registered.`,
         }, { status: 409 });
       }
-      // Demo / offline fallback check
-      if (DEMO_STUDENTS.some((s) => s.studentId === studentId)) {
+      const list = getFallbackStudents();
+      if (list.some((s) => s.studentId.toLowerCase() === studentId.toLowerCase())) {
         return NextResponse.json({
           error: `Student ID "${studentId}" is already registered.`,
         }, { status: 409 });
       }
-      console.warn("Students DB offline during create, returning simulated saved student");
-      return NextResponse.json({
-        id: Date.now(),
+      const nextId = list.reduce((max, s) => Math.max(max, Number(s.id) || 0), 0) + 1;
+      const newStudent: InMemStudent = {
+        id: nextId,
         studentId,
         fullName,
         birthday,
@@ -171,7 +195,10 @@ export async function POST(req: NextRequest) {
         section: body.section || "A",
         gender: body.gender || "Male",
         avatarColor: body.avatarColor || "#6366f1",
-      });
+      };
+      list.push(newStudent);
+      console.warn("Students DB offline during create, saved into memory fallback list:", newStudent.studentId);
+      return NextResponse.json(newStudent);
     }
   } catch (error) {
     console.error("Students create error", error);
@@ -208,7 +235,8 @@ export async function PUT(req: NextRequest) {
             error: `Student ID "${rest.studentId}" is already assigned to another student.`,
           }, { status: 409 });
         }
-        if (DEMO_STUDENTS.some((s) => s.studentId === rest.studentId && s.id !== id)) {
+        const list = getFallbackStudents();
+        if (list.some((s) => s.studentId === rest.studentId && s.id !== id)) {
           return NextResponse.json({
             error: `Student ID "${rest.studentId}" is already assigned to another student.`,
           }, { status: 409 });
@@ -244,7 +272,13 @@ export async function PUT(req: NextRequest) {
           error: `Student ID "${rest.studentId}" is already assigned to another student.`,
         }, { status: 409 });
       }
-      console.warn("Students DB offline during update, returning simulated updated student");
+      console.warn("Students DB offline during update, updating memory fallback list");
+      const list = getFallbackStudents();
+      const idx = list.findIndex((s) => s.id === id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...rest, id };
+        return NextResponse.json(list[idx]);
+      }
       return NextResponse.json({ id, ...rest });
     }
   } catch (error) {
@@ -267,7 +301,9 @@ export async function DELETE(req: NextRequest) {
     try {
       await db.delete(students).where(whereClause);
     } catch {
-      console.warn("Students DB offline during delete, returning simulated success");
+      console.warn("Students DB offline during delete, removing from memory fallback list");
+      const targetId = Number(body.id);
+      globalForStudents.__inMemoryStudents = getFallbackStudents().filter((s) => s.id !== targetId);
     }
     return NextResponse.json({ success: true });
   } catch (error) {

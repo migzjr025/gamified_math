@@ -82,6 +82,17 @@ const DEMO_GRADES = [
   },
 ];
 
+const globalForGrades = globalThis as typeof globalThis & {
+  __inMemoryGrades?: any[];
+};
+
+function getFallbackGrades(): any[] {
+  if (!globalForGrades.__inMemoryGrades) {
+    globalForGrades.__inMemoryGrades = [...DEMO_GRADES];
+  }
+  return globalForGrades.__inMemoryGrades;
+}
+
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
@@ -116,7 +127,7 @@ export async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.warn("Grades DB offline, returning demo grades list");
-    return NextResponse.json(DEMO_GRADES);
+    return NextResponse.json(getFallbackGrades());
   }
 }
 
@@ -159,12 +170,17 @@ export async function POST(req: NextRequest) {
       const result = await db.insert(grades).values(payload).returning();
       return NextResponse.json(result[0]);
     } catch (dbErr) {
-      console.warn("Grades DB offline on create, returning simulated grade record");
-      return NextResponse.json({
-        id: Date.now(),
+      console.warn("Grades DB offline on create, saving to memory fallback list");
+      const list = getFallbackGrades();
+      const nextId = list.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0) + 1;
+      const newGrade = {
+        id: nextId,
         ...payload,
         createdAt: new Date().toISOString(),
-      });
+        updatedAt: new Date().toISOString(),
+      };
+      list.push(newGrade);
+      return NextResponse.json(newGrade);
     }
   } catch (error) {
     console.error("Grades create error", error);
@@ -199,7 +215,13 @@ export async function PUT(req: NextRequest) {
       const result = await db.update(grades).set(rest).where(whereClause).returning();
       return NextResponse.json(result[0] || { id, ...rest });
     } catch {
-      console.warn("Grades DB offline on update, returning simulated update");
+      console.warn("Grades DB offline on update, updating memory fallback list");
+      const list = getFallbackGrades();
+      const idx = list.findIndex(g => g.id === id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...rest, id };
+        return NextResponse.json(list[idx]);
+      }
       return NextResponse.json({ id, ...rest });
     }
   } catch (error) {
@@ -233,7 +255,9 @@ export async function DELETE(req: NextRequest) {
     try {
       await db.delete(grades).where(whereClause);
     } catch {
-      console.warn("Grades DB offline on delete, returning simulated success");
+      console.warn("Grades DB offline on delete, removing from memory fallback list");
+      const list = getFallbackGrades();
+      globalForGrades.__inMemoryGrades = list.filter(g => g.id !== id);
     }
     return NextResponse.json({ success: true });
   } catch (error) {

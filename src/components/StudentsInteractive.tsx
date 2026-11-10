@@ -206,21 +206,59 @@ export default function StudentsClient({ userName, role }: { userName: string; r
   const [importMessage, setImportMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [formError, setFormError] = useState("");
 
+  const STORAGE_KEY = "matatag_student_roster_v1";
+
+  function getStoredStudents(): Student[] | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setStoredStudents(list: Student[]) {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch {}
+  }
+
   async function load() {
     setLoading(true);
     try {
       const res = await fetch("/api/students");
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setItems(data.map((s, idx) => ({
-          ...s,
-          studentId: normalizeStudentId(s.studentId, idx),
-        })));
-      } else {
-        setItems([]);
-      }
+      const serverList: Student[] = Array.isArray(data)
+        ? data.map((s, idx) => ({
+            ...s,
+            studentId: normalizeStudentId(s.studentId, idx),
+          }))
+        : [];
+
+      // Merge server list with any locally cached students
+      const localCached = getStoredStudents() || [];
+      const map = new Map<string, Student>();
+      serverList.forEach((s) => map.set(s.studentId, s));
+      localCached.forEach((s) => {
+        if (!map.has(s.studentId)) {
+          map.set(s.studentId, s);
+        } else {
+          const cur = map.get(s.studentId)!;
+          map.set(s.studentId, { ...cur, ...s, id: cur.id || s.id });
+        }
+      });
+
+      const merged = Array.from(map.values()).sort((a, b) => a.studentId.localeCompare(b.studentId));
+      setItems(merged);
+      setStoredStudents(merged);
     } catch {
-      setItems([]);
+      const fallback = getStoredStudents();
+      if (fallback) setItems(fallback);
+      else setItems([]);
     } finally {
       setLoading(false);
     }
@@ -272,6 +310,31 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         return;
       }
 
+      const savedStudent: Student = {
+        id: data.id || (edit ? edit.id : Date.now()),
+        studentId: normalizeStudentId(data.studentId || studentId),
+        fullName: data.fullName || payload.fullName,
+        birthday: data.birthday ?? payload.birthday,
+        age: data.age ?? payload.age,
+        gradeLevel: data.gradeLevel || payload.gradeLevel,
+        section: data.section || payload.section,
+        gender: data.gender || payload.gender,
+        avatarColor: data.avatarColor || payload.avatarColor,
+      };
+
+      setItems((prev) => {
+        const next = edit
+          ? prev.map((s) => (s.id === edit.id || s.studentId === savedStudent.studentId ? savedStudent : s))
+          : [savedStudent, ...prev.filter((s) => s.studentId !== savedStudent.studentId)];
+        setStoredStudents(next);
+        return next;
+      });
+
+      setImportMessage({
+        type: "success",
+        text: edit ? `Student "${savedStudent.fullName}" updated successfully.` : `Student "${savedStudent.fullName}" (${savedStudent.studentId}) added successfully.`,
+      });
+
       setOpen(false);
       setEdit(null);
       setForm(DEFAULT_FORM);
@@ -283,7 +346,21 @@ export default function StudentsClient({ userName, role }: { userName: string; r
   }
 
   async function remove(id: number) {
-    await fetch("/api/students", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    try {
+      await fetch("/api/students", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    } catch {}
+
+    setItems((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      setStoredStudents(next);
+      return next;
+    });
+
+    setImportMessage({
+      type: "success",
+      text: "Student removed successfully.",
+    });
+
     load();
   }
 
