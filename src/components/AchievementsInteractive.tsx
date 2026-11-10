@@ -28,23 +28,27 @@ interface LeaderboardEntry extends Student {
 export default function AchievementsClient({ userName, role }: { userName: string; role?: string }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [results, setResults] = useState<GameResult[]>([]);
+  const [grades, setGrades] = useState<{ studentId: number; assessmentId: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     async function loadLeaderboard() {
       try {
-        const [studentsResponse, resultsResponse] = await Promise.all([
+        const [studentsResponse, resultsResponse, gradesResponse] = await Promise.all([
           fetch("/api/students"),
           fetch("/api/game-results"),
+          fetch("/api/grades"),
         ]);
         if (!studentsResponse.ok || !resultsResponse.ok) throw new Error("Leaderboard data unavailable");
-        const [studentRows, resultRows] = await Promise.all([
+        const [studentRows, resultRows, gradeRows] = await Promise.all([
           studentsResponse.json(),
           resultsResponse.json(),
+          gradesResponse.ok ? gradesResponse.json() : Promise.resolve([]),
         ]);
         setStudents(Array.isArray(studentRows) ? studentRows : []);
         setResults(Array.isArray(resultRows) ? resultRows : []);
+        setGrades(Array.isArray(gradeRows) ? gradeRows : []);
       } catch (error) {
         console.error("Leaderboard load failed", error);
       } finally {
@@ -56,7 +60,17 @@ export default function AchievementsClient({ userName, role }: { userName: strin
   }, []);
 
   const activeStudentIds = new Set(students.map((s) => s.id));
-  const activeResults = results.filter((r) => activeStudentIds.has(r.studentId));
+  const activeGradeKeys = new Set(
+    grades.map((g) => `${g.studentId}_${g.assessmentId}`)
+  );
+  // Only display game results that correspond to active grades in the grading system
+  const activeResults = results.filter((r) => {
+    if (!activeStudentIds.has(r.studentId)) return false;
+    if (activeGradeKeys.size > 0 && !activeGradeKeys.has(`${r.studentId}_${r.assessmentId}`)) {
+      return false;
+    }
+    return true;
+  });
 
   // Deduplicate and aggregate best score per assessment/stage (matching game leaderboard logic)
   const bestByStudentAssessment = new Map<number, Map<number, GameResult>>();

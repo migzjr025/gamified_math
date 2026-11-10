@@ -272,6 +272,7 @@ export async function DELETE(req: NextRequest) {
     const idParam = searchParams.get("id") || body?.id;
     const studentIdParam = searchParams.get("studentId") || body?.studentId;
     const cleanOrphaned = searchParams.get("cleanOrphaned") === "true" || body?.cleanOrphaned === true;
+    const cleanUnmatched = searchParams.get("cleanUnmatched") === "true" || body?.cleanUnmatched === true;
     const deleteAll = searchParams.get("all") === "true" || body?.all === true || body?.deleteAll === true;
 
     if (deleteAll) {
@@ -281,6 +282,32 @@ export async function DELETE(req: NextRequest) {
         console.warn("Error deleting all game results:", allErr);
       }
       return NextResponse.json({ success: true, message: "All game results cleared." });
+    }
+
+    if (cleanUnmatched) {
+      try {
+        const allGrades = await db
+          .select({ studentId: grades.studentId, assessmentId: grades.assessmentId })
+          .from(grades);
+        const validPairs = new Set(allGrades.map((g) => `${g.studentId}_${g.assessmentId}`));
+        const allResults = await db
+          .select({ id: gameResults.id, studentId: gameResults.studentId, assessmentId: gameResults.assessmentId })
+          .from(gameResults);
+        const toDelete = allResults.filter((r) => !validPairs.has(`${r.studentId}_${r.assessmentId}`));
+
+        for (const item of toDelete) {
+          await db.delete(gameResults).where(eq(gameResults.id, item.id));
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Cleaned up ${toDelete.length} unmatched game results without corresponding grades.`,
+          deletedCount: toDelete.length,
+        });
+      } catch (unmatchErr) {
+        console.warn("Unmatched game results cleanup error:", unmatchErr);
+        return NextResponse.json({ success: false, error: String(unmatchErr) }, { status: 500 });
+      }
     }
 
     if (cleanOrphaned) {
@@ -313,12 +340,8 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "A valid positive studentId is required." }, { status: 400 });
       }
 
-      const whereClause = isAdmin
-        ? eq(gameResults.studentId, studentId)
-        : and(eq(gameResults.studentId, studentId), eq(gameResults.userId, userId));
-
       try {
-        await db.delete(gameResults).where(whereClause);
+        await db.delete(gameResults).where(eq(gameResults.studentId, studentId));
       } catch (delErr) {
         console.warn("Game results delete by studentId error:", delErr);
       }
@@ -331,12 +354,8 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "A valid positive game result id is required." }, { status: 400 });
       }
 
-      const whereClause = isAdmin
-        ? eq(gameResults.id, id)
-        : and(eq(gameResults.id, id), eq(gameResults.userId, userId));
-
       try {
-        await db.delete(gameResults).where(whereClause);
+        await db.delete(gameResults).where(eq(gameResults.id, id));
       } catch (delErr) {
         console.warn("Game results delete by id error:", delErr);
       }

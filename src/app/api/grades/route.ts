@@ -347,12 +347,8 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "A valid positive studentId is required." }, { status: 400 });
       }
 
-      const whereClause = isAdmin
-        ? eq(grades.studentId, studentId)
-        : and(eq(grades.studentId, studentId), eq(grades.userId, userId));
-
       try {
-        await db.delete(grades).where(whereClause);
+        await db.delete(grades).where(eq(grades.studentId, studentId));
         await db.delete(gameResults).where(eq(gameResults.studentId, studentId));
       } catch (delErr) {
         console.warn("Grades delete by studentId error:", delErr);
@@ -379,12 +375,8 @@ export async function DELETE(req: NextRequest) {
         if (found.length > 0) targetGrade = found[0];
       } catch {}
 
-      const whereClause = isAdmin
-        ? eq(grades.id, id)
-        : and(eq(grades.id, id), eq(grades.userId, userId));
-
       try {
-        await db.delete(grades).where(whereClause);
+        await db.delete(grades).where(eq(grades.id, id));
         if (targetGrade && targetGrade.studentId && targetGrade.assessmentId) {
           await db.delete(gameResults).where(
             and(
@@ -393,8 +385,8 @@ export async function DELETE(req: NextRequest) {
             )
           );
         }
-      } catch {
-        console.warn("Grades DB offline on delete, removing from memory fallback list");
+      } catch (err) {
+        console.warn("Grades DB offline on delete, removing from memory fallback list:", err);
       }
 
       const list = getFallbackGrades();
