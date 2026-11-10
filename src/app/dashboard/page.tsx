@@ -75,7 +75,10 @@ export default async function DashboardPage() {
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
       studentAvg.set(s.id, { name: s.fullName, avg, idStr: s.studentId });
     }
-    topStudents = Array.from(studentAvg.values()).sort((a, b) => b.avg - a.avg).slice(0, 3);
+    topStudents = Array.from(studentAvg.values())
+      .filter((s) => s.avg > 0)
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 3);
   } catch (error) {
     console.warn("Dashboard data unavailable, using demo fallback data");
   }
