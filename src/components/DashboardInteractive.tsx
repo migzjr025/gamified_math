@@ -57,7 +57,13 @@ export default function DashboardInteractive({
             {[
               { label: "Students", value: String(totalStudents ?? 0), icon: Users, color: "from-violet-500 to-violet-700", sub: "Active learners" },
               { label: "Grades Logged", value: String(totalGrades ?? 0), icon: Zap, color: "from-amber-400 to-amber-600", sub: "Assessments graded" },
-              { label: "Avg Score", value: (Number.isFinite(avgScore) ? avgScore : 0).toFixed(1) + "%", icon: TrendingUp, color: "from-teal-400 to-teal-600", sub: "Class average" },
+              { 
+                label: "Avg Score", 
+                value: (totalGrades ?? 0) > 0 && Number.isFinite(avgScore) ? `${avgScore.toFixed(1)}%` : "—", 
+                icon: TrendingUp, 
+                color: "from-teal-400 to-teal-600", 
+                sub: (totalGrades ?? 0) > 0 ? "Class average" : "No grades yet" 
+              },
               { label: "Curriculum Units", value: String(totalUnits ?? 0), icon: BookOpen, color: "from-rose-400 to-rose-600", sub: "Matatag units" },
             ].map((s) => (
               <Link key={s.label} href={s.label === "Students" ? "/students" : s.label === "Grades Logged" ? "/grades" : s.label === "Curriculum Units" ? "/units" : "/dashboard"} className="glass-card rounded-2xl p-6 hover:scale-[1.02] transition-transform duration-200 group">

@@ -304,9 +304,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         return getQuarterOrder(a.assessmentTitle, a.quarter) - getQuarterOrder(b.assessmentTitle, b.quarter);
       });
 
-      const avg = Math.round(
-        sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length
-      );
+      const avg = sortedGrades.length > 0
+        ? Math.round(sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length)
+        : 0;
 
       const quarterGrades = sortedGrades.filter((g) => getQuarterOrder(g.assessmentTitle, g.quarter) <= 3);
       const quarterCount = quarterGrades.length;

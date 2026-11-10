@@ -9,23 +9,12 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const user = await requireAuth();
 
-  const fallbackRecentGrades = [
-    { score: 88, studentName: "Juan Dela Cruz", assessmentTitle: "Unit 1 Quiz", createdAt: "2026-05-15" },
-    { score: 92, studentName: "Maria Santos", assessmentTitle: "Unit 2 Activity", createdAt: "2026-05-22" },
-    { score: 78, studentName: "Pedro Garcia", assessmentTitle: "Unit 3 Assessment", createdAt: "2026-05-28" },
-  ];
-  const fallbackTopStudents = [
-    { idStr: "2026-002", name: "Maria Santos", avg: 92 },
-    { idStr: "2026-001", name: "Juan Dela Cruz", avg: 88 },
-    { idStr: "2026-004", name: "Ana Mendoza", avg: 82 },
-  ];
-
-  let totalStudents = 8;
-  let totalGrades = 9;
-  let avgScore = 87.2;
-  let totalUnits = 6;
-  let recentGrades = fallbackRecentGrades;
-  let topStudents = fallbackTopStudents;
+  let totalStudents = 0;
+  let totalGrades = 0;
+  let avgScore = 0;
+  let totalUnits = 0;
+  let recentGrades: Array<{ score: number; studentName: string; assessmentTitle: string; createdAt: string }> = [];
+  let topStudents: Array<{ idStr: string; name: string; avg: number }> = [];
 
   const isAdmin = user.role === "admin";
   const userId = user.id;
@@ -45,10 +34,12 @@ export default async function DashboardPage() {
 
     const totalUnitsRes = await db.select({ count: sql<number>`count(*)` }).from(units);
 
-    totalStudents = Number(totalStudentsRes[0]?.count ?? 8);
-    totalGrades = Number(totalGradesRes[0]?.count ?? 9);
-    avgScore = Number(avgScoreRes[0]?.avg ?? 87.2);
-    totalUnits = Number(totalUnitsRes[0]?.count ?? 6);
+    totalStudents = Number(totalStudentsRes[0]?.count ?? 0);
+    totalGrades = Number(totalGradesRes[0]?.count ?? 0);
+    avgScore = totalGrades > 0 && avgScoreRes[0]?.avg != null && !isNaN(Number(avgScoreRes[0]?.avg))
+      ? Number(Number(avgScoreRes[0]?.avg).toFixed(1))
+      : 0;
+    totalUnits = Number(totalUnitsRes[0]?.count ?? 0);
 
     const recentGradesQuery = isAdmin
       ? db.select().from(grades).orderBy(sql`${grades.id} desc`).limit(8)
@@ -80,7 +71,7 @@ export default async function DashboardPage() {
       .sort((a, b) => b.avg - a.avg)
       .slice(0, 3);
   } catch (error) {
-    console.warn("Dashboard data unavailable, using demo fallback data");
+    console.warn("Dashboard data unavailable", error);
   }
 
   return (
