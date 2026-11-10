@@ -122,6 +122,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A valid Curriculum Unit is required." }, { status: 400 });
     }
 
+    // Error handler: Prevent exceeding 10 questions per quarter period
+    try {
+      const existingQuarterQs = await db
+        .select()
+        .from(gameQuestions)
+        .where(eq(gameQuestions.quarter, quarter));
+
+      if (existingQuarterQs.length >= 10) {
+        return NextResponse.json(
+          {
+            error: `Question limit reached! ${quarter} already contains 10 questions. You cannot exceed 10 questions per quarter.`,
+          },
+          { status: 400 }
+        );
+      }
+    } catch {
+      const count = DEFAULT_QUESTIONS.filter((q) => q.quarter === quarter).length;
+      if (count >= 10) {
+        return NextResponse.json(
+          {
+            error: `Question limit reached! ${quarter} already contains 10 questions. You cannot exceed 10 questions per quarter.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     try {
       const unitCheck = await db.select().from(units).where(eq(units.id, unitId)).limit(1);
       if (unitCheck.length === 0) {
@@ -168,6 +195,26 @@ export async function PUT(req: NextRequest) {
     }
 
     const { id: _id, ...rest } = body;
+    if (rest.quarter) {
+      try {
+        const existingTargetQs = await db
+          .select()
+          .from(gameQuestions)
+          .where(eq(gameQuestions.quarter, rest.quarter));
+
+        const otherQsInQuarter = existingTargetQs.filter((q) => q.id !== id);
+        if (otherQsInQuarter.length >= 10) {
+          return NextResponse.json(
+            {
+              error: `Question limit reached! ${rest.quarter} already contains 10 questions. You cannot exceed 10 questions per quarter.`,
+            },
+            { status: 400 }
+          );
+        }
+      } catch {
+        // Fallback for offline mode
+      }
+    }
     try {
       const result = await db.update(gameQuestions).set(rest).where(eq(gameQuestions.id, id)).returning();
       return NextResponse.json(result[0] || { id, ...rest });
