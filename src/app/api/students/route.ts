@@ -79,13 +79,24 @@ export async function GET(req: NextRequest) {
     const userId = sessionUser?.id || 1;
     const isTeacher = sessionUser && sessionUser.role === "teacher" && !(sessionUser as any).isGameClient;
 
-    const data = isTeacher
+    let data = isTeacher
       ? await db
           .select()
           .from(students)
           .where(or(eq(students.userId, userId), isNull(students.userId)))
           .orderBy(students.id)
       : await db.select().from(students).orderBy(students.id);
+
+    // Auto-seed default students into database if empty
+    if (data.length === 0) {
+      for (const s of DEMO_STUDENTS) {
+        try {
+          const { id: _, ...payload } = s;
+          await db.insert(students).values({ ...payload, userId: 1 });
+        } catch {}
+      }
+      data = await db.select().from(students).orderBy(students.id);
+    }
 
     const enriched = data.map((s, idx) => ({
       ...s,
