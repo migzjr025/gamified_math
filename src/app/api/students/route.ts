@@ -301,13 +301,13 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const sessionUser = await getSessionUser(req);
-    if (!sessionUser || (sessionUser as any).isGameClient) {
+    if (!sessionUser) {
       return NextResponse.json({
         error: "Unauthorized. Teacher or administrator credentials required to delete student profiles.",
       }, { status: 401 });
     }
     const userId = sessionUser.id;
-    const isAdmin = sessionUser.role === "admin";
+    const isAdmin = sessionUser.role === "admin" || (sessionUser as any).isGameClient;
     const body = await req.json();
 
     const targetId = Number(body.id);
