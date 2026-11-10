@@ -1,10 +1,45 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { NextRequest } from "next/server";
 
-export async function getSessionUser() {
+export const GAME_API_KEY = process.env.GAME_API_KEY || "COGNITIVE-QUEST-MATATAG-2026";
+
+export interface SessionUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  grade?: string;
+  isGameClient?: boolean;
+}
+
+export async function getSessionUser(req?: NextRequest | Request): Promise<SessionUser | null> {
+  // 1. Check for valid Game API Key header (from desktop game client)
+  try {
+    let headerKey: string | null = null;
+    if (req) {
+      headerKey = req.headers.get("x-game-key") || req.headers.get("X-Game-Key");
+    } else {
+      const headerStore = await headers();
+      headerKey = headerStore.get("x-game-key") || headerStore.get("X-Game-Key");
+    }
+
+    if (headerKey && headerKey.trim() === GAME_API_KEY) {
+      const teacherId = Number(process.env.GAME_TEACHER_ID) || 1;
+      return {
+        id: teacherId,
+        email: "game-client@matatag.edu.ph",
+        name: "Cognitive Maze Game Client",
+        role: "teacher",
+        isGameClient: true,
+      };
+    }
+  } catch {}
+
+  // 2. Check session cookie
   const cookieStore = await cookies();
   const session = cookieStore.get("session");
   if (!session?.value) return null;
@@ -13,16 +48,19 @@ export async function getSessionUser() {
     const dbUser = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
     if (dbUser.length === 0) {
       if (user.email === "teacher@matatag.edu.ph" || user.email === "admin@matatag.edu.ph") {
-        return { ...user, password: undefined };
+        const { password: _, ...cleanUser } = user;
+        return cleanUser as SessionUser;
       }
       return null;
     }
-    return { ...dbUser[0], password: undefined };
+    const { password: _, ...cleanDbUser } = dbUser[0];
+    return cleanDbUser as SessionUser;
   } catch {
     try {
       const fallbackUser = JSON.parse(session.value);
       if (fallbackUser.email === "teacher@matatag.edu.ph" || fallbackUser.email === "admin@matatag.edu.ph") {
-        return { ...fallbackUser, password: undefined };
+        const { password: _, ...cleanFallback } = fallbackUser;
+        return cleanFallback as SessionUser;
       }
       return null;
     } catch {

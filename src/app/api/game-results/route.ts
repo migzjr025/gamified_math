@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
 
     const studentId = Number(body.studentId);
@@ -84,22 +84,76 @@ export async function POST(req: NextRequest) {
     try {
       const result = await db.insert(gameResults).values(payload).returning();
 
+      // Server-Side Best Score Upsert into grades
       try {
-        await db.insert(grades).values({
-          userId,
-          studentId: payload.studentId,
-          assessmentId: payload.assessmentId,
-          score: payload.percentage,
-          pointsEarned: payload.percentage,
-          feedback: payload.feedback,
-        });
+        const existingGrades = await db
+          .select()
+          .from(grades)
+          .where(and(eq(grades.studentId, payload.studentId), eq(grades.assessmentId, payload.assessmentId)))
+          .limit(1);
+
+        if (existingGrades.length > 0) {
+          const currentBest = Number(existingGrades[0].score) || 0;
+          // If new attempt is better or equal, upgrade the grade with latest points and feedback
+          if (payload.percentage >= currentBest) {
+            await db
+              .update(grades)
+              .set({
+                score: payload.percentage,
+                pointsEarned: payload.percentage,
+                feedback: payload.feedback || existingGrades[0].feedback,
+                updatedAt: new Date(),
+              })
+              .where(eq(grades.id, existingGrades[0].id));
+          }
+        } else {
+          // First evaluated attempt for this assessment
+          await db.insert(grades).values({
+            userId,
+            studentId: payload.studentId,
+            assessmentId: payload.assessmentId,
+            score: payload.percentage,
+            pointsEarned: payload.percentage,
+            feedback: payload.feedback,
+          });
+        }
       } catch (gradeErr) {
-        console.warn("Grades auto-log secondary error:", gradeErr);
+        console.warn("Grades best-score upsert secondary error:", gradeErr);
       }
 
       return NextResponse.json(result[0]);
     } catch (dbErr) {
-      console.warn("Game results DB offline, returning simulated saved game result:", dbErr);
+      console.warn("Game results DB offline, saving to fallback store:", dbErr);
+
+      // In-memory fallback upsert
+      const globalForGrades = globalThis as typeof globalThis & {
+        __inMemoryGrades?: any[];
+      };
+      if (globalForGrades.__inMemoryGrades) {
+        const list = globalForGrades.__inMemoryGrades;
+        const existing = list.find(g => g.studentId === payload.studentId && g.assessmentId === payload.assessmentId);
+        if (existing) {
+          if (payload.percentage >= (Number(existing.score) || 0)) {
+            existing.score = payload.percentage;
+            existing.pointsEarned = payload.percentage;
+            existing.feedback = payload.feedback || existing.feedback;
+            existing.updatedAt = new Date().toISOString();
+          }
+        } else {
+          list.push({
+            id: list.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0) + 1,
+            userId,
+            studentId: payload.studentId,
+            assessmentId: payload.assessmentId,
+            score: payload.percentage,
+            pointsEarned: payload.percentage,
+            feedback: payload.feedback,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+
       return NextResponse.json({
         id: Date.now(),
         ...payload,

@@ -93,9 +93,9 @@ function getFallbackGrades(): any[] {
   return globalForGrades.__inMemoryGrades;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
 
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
 
     const studentId = Number(body.studentId);
@@ -197,7 +197,7 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
     const id = Number(body.id);
@@ -239,7 +239,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
     const id = Number(body.id);

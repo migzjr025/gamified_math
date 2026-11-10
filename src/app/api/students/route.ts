@@ -73,9 +73,9 @@ function normalizeStudentId(rawId: string | null | undefined, fallbackIndex: num
   return id;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
 
@@ -106,7 +106,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const body = await req.json();
     const fullName = String(body.fullName || "").trim();
@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
+    const sessionUser = await getSessionUser(req);
     const userId = sessionUser?.id || 1;
     const isAdmin = sessionUser?.role === "admin";
     const body = await req.json();
@@ -289,9 +289,14 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const sessionUser = await getSessionUser();
-    const userId = sessionUser?.id || 1;
-    const isAdmin = sessionUser?.role === "admin";
+    const sessionUser = await getSessionUser(req);
+    if (!sessionUser || (sessionUser as any).isGameClient) {
+      return NextResponse.json({
+        error: "Unauthorized. Teacher or administrator credentials required to delete student profiles.",
+      }, { status: 401 });
+    }
+    const userId = sessionUser.id;
+    const isAdmin = sessionUser.role === "admin";
     const body = await req.json();
 
     const whereClause = isAdmin
