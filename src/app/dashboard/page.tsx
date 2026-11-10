@@ -22,15 +22,15 @@ export default async function DashboardPage() {
   try {
     const totalStudentsRes = isAdmin
       ? await db.select({ count: sql<number>`count(*)` }).from(students)
-      : await db.select({ count: sql<number>`count(*)` }).from(students).where(sql`${students.userId} = ${userId}`);
+      : await db.select({ count: sql<number>`count(*)` }).from(students).where(sql`${students.userId} = ${userId} or ${students.userId} is null`);
 
     const totalGradesRes = isAdmin
       ? await db.select({ count: sql<number>`count(*)` }).from(grades)
-      : await db.select({ count: sql<number>`count(*)` }).from(grades).where(sql`${grades.userId} = ${userId}`);
+      : await db.select({ count: sql<number>`count(*)` }).from(grades).where(sql`${grades.userId} = ${userId} or ${grades.userId} is null or ${grades.userId} = 1`);
 
     const avgScoreRes = isAdmin
       ? await db.select({ avg: sql<number>`avg(score)` }).from(grades)
-      : await db.select({ avg: sql<number>`avg(score)` }).from(grades).where(sql`${grades.userId} = ${userId}`);
+      : await db.select({ avg: sql<number>`avg(score)` }).from(grades).where(sql`${grades.userId} = ${userId} or ${grades.userId} is null or ${grades.userId} = 1`);
 
     const totalUnitsRes = await db.select({ count: sql<number>`count(*)` }).from(units);
 
@@ -43,7 +43,7 @@ export default async function DashboardPage() {
 
     const recentGradesQuery = isAdmin
       ? db.select().from(grades).orderBy(sql`${grades.id} desc`).limit(8)
-      : db.select().from(grades).where(sql`${grades.userId} = ${userId}`).orderBy(sql`${grades.id} desc`).limit(8);
+      : db.select().from(grades).where(sql`${grades.userId} = ${userId} or ${grades.userId} is null or ${grades.userId} = 1`).orderBy(sql`${grades.id} desc`).limit(8);
 
     const recentGradesRaw = await recentGradesQuery;
     recentGrades = await Promise.all(recentGradesRaw.map(async (g) => {
@@ -54,11 +54,11 @@ export default async function DashboardPage() {
 
     const allStudents = isAdmin
       ? await db.select().from(students)
-      : await db.select().from(students).where(sql`${students.userId} = ${userId}`);
+      : await db.select().from(students).where(sql`${students.userId} = ${userId} or ${students.userId} is null`);
 
     const allGradesMap = isAdmin
       ? await db.select({ studentId: grades.studentId, score: grades.score }).from(grades)
-      : await db.select({ studentId: grades.studentId, score: grades.score }).from(grades).where(sql`${grades.userId} = ${userId}`);
+      : await db.select({ studentId: grades.studentId, score: grades.score }).from(grades).where(sql`${grades.userId} = ${userId} or ${grades.userId} is null or ${grades.userId} = 1`);
 
     const studentAvg = new Map<number, { name: string; avg: number; idStr: string }>();
     for (const s of allStudents) {

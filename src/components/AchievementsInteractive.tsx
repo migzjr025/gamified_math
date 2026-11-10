@@ -13,6 +13,7 @@ interface Student {
 
 interface GameResult {
   studentId: number;
+  assessmentId: number;
   score: number;
   correctAnswers: number;
   percentage: number;
@@ -57,14 +58,35 @@ export default function AchievementsClient({ userName, role }: { userName: strin
   const activeStudentIds = new Set(students.map((s) => s.id));
   const activeResults = results.filter((r) => activeStudentIds.has(r.studentId));
 
-  const totals = new Map<number, { points: number; correct: number; percentage: number; plays: number }>();
+  // Deduplicate and aggregate best score per assessment/stage (matching game leaderboard logic)
+  const bestByStudentAssessment = new Map<number, Map<number, GameResult>>();
   for (const result of activeResults) {
-    const total = totals.get(result.studentId) ?? { points: 0, correct: 0, percentage: 0, plays: 0 };
-    total.points += Number(result.score ?? 0);
-    total.correct += Number(result.correctAnswers ?? 0);
-    total.percentage += Number(result.percentage ?? 0);
-    total.plays += 1;
-    totals.set(result.studentId, total);
+    const assMap = bestByStudentAssessment.get(result.studentId) ?? new Map<number, GameResult>();
+    const existing = assMap.get(result.assessmentId);
+    if (!existing || Number(result.score ?? 0) > Number(existing.score ?? 0)) {
+      assMap.set(result.assessmentId, result);
+    }
+    bestByStudentAssessment.set(result.studentId, assMap);
+  }
+
+  const totals = new Map<number, { points: number; correct: number; percentage: number; plays: number }>();
+  for (const [studentId, assMap] of bestByStudentAssessment.entries()) {
+    let points = 0;
+    let correct = 0;
+    let percentageSum = 0;
+    let count = 0;
+    for (const res of assMap.values()) {
+      points += Number(res.score ?? 0);
+      correct += Number(res.correctAnswers ?? 0);
+      percentageSum += Number(res.percentage ?? 0);
+      count += 1;
+    }
+    totals.set(studentId, {
+      points,
+      correct,
+      percentage: count > 0 ? percentageSum / count : 0,
+      plays: count,
+    });
   }
 
   const leaderboard: LeaderboardEntry[] = students

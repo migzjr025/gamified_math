@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { gameResults, grades, students } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -30,7 +30,14 @@ export async function GET(req?: NextRequest) {
       .orderBy(gameResults.id);
 
     const data = isTeacher
-      ? await query.where(eq(gameResults.userId, userId))
+      ? await query.where(
+          or(
+            eq(gameResults.userId, userId),
+            isNull(gameResults.userId),
+            eq(students.userId, userId),
+            isNull(students.userId)
+          )
+        )
       : await query;
 
     return NextResponse.json(data);
@@ -134,7 +141,37 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-      const result = await db.insert(gameResults).values(payload).returning();
+      // Best-score upsert for gameResults to prevent duplicate row inflation
+      const existingResults = await db
+        .select()
+        .from(gameResults)
+        .where(and(eq(gameResults.studentId, payload.studentId), eq(gameResults.assessmentId, payload.assessmentId)))
+        .limit(1);
+
+      let savedResult: any;
+      if (existingResults.length > 0) {
+        if (payload.score >= Number(existingResults[0].score)) {
+          const updated = await db
+            .update(gameResults)
+            .set({
+              score: payload.score,
+              totalQuestions: payload.totalQuestions,
+              correctAnswers: payload.correctAnswers,
+              percentage: payload.percentage,
+              feedback: payload.feedback || existingResults[0].feedback,
+              gradeLevel: payload.gradeLevel,
+              userId: effectiveUserId,
+            })
+            .where(eq(gameResults.id, existingResults[0].id))
+            .returning();
+          savedResult = updated[0];
+        } else {
+          savedResult = existingResults[0];
+        }
+      } else {
+        const created = await db.insert(gameResults).values(payload).returning();
+        savedResult = created[0];
+      }
 
       // Server-Side Best Score Upsert into grades
       try {
@@ -173,7 +210,7 @@ export async function POST(req: NextRequest) {
         console.warn("Grades best-score upsert secondary error:", gradeErr);
       }
 
-      return NextResponse.json(result[0]);
+      return NextResponse.json(savedResult);
     } catch (dbErr) {
       console.warn("Game results DB offline, saving to fallback store:", dbErr);
 

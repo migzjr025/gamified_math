@@ -63,7 +63,7 @@ function formatBirthday(dateStr?: string | null): string {
   }
 }
 
-const STUDENT_ID_REGEX = /^\d{4}-\d{3,}$/;
+const STUDENT_ID_REGEX = /^([a-zA-Z]-)?\d{2,4}-\d{3,}$/;
 
 function cleanStudentId(id: string): string {
   return (id || "").replace(/^s-/i, "").trim();
@@ -233,29 +233,18 @@ export default function StudentsClient({ userName, role }: { userName: string; r
     try {
       const res = await fetch("/api/students");
       const data = await res.json();
-      const serverList: Student[] = Array.isArray(data)
-        ? data.map((s, idx) => ({
-            ...s,
-            studentId: normalizeStudentId(s.studentId, idx),
-          }))
-        : [];
-
-      // Merge server list with any locally cached students
-      const localCached = getStoredStudents() || [];
-      const map = new Map<string, Student>();
-      serverList.forEach((s) => map.set(s.studentId, s));
-      localCached.forEach((s) => {
-        if (!map.has(s.studentId)) {
-          map.set(s.studentId, s);
-        } else {
-          const cur = map.get(s.studentId)!;
-          map.set(s.studentId, { ...cur, ...s, id: cur.id || s.id });
-        }
-      });
-
-      const merged = Array.from(map.values()).sort((a, b) => a.studentId.localeCompare(b.studentId));
-      setItems(merged);
-      setStoredStudents(merged);
+      if (Array.isArray(data)) {
+        const serverList: Student[] = data.map((s, idx) => ({
+          ...s,
+          studentId: normalizeStudentId(s.studentId, idx),
+        }));
+        const sorted = serverList.sort((a, b) => a.studentId.localeCompare(b.studentId));
+        setItems(sorted);
+        setStoredStudents(sorted);
+      } else {
+        const fallback = getStoredStudents() || [];
+        setItems(fallback);
+      }
     } catch {
       const fallback = getStoredStudents();
       if (fallback) setItems(fallback);

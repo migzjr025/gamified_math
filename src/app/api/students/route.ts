@@ -168,10 +168,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const STUDENT_ID_REGEX = /^\d{4}-\d{3,}$/;
+    const STUDENT_ID_REGEX = /^([a-zA-Z]-)?\d{2,4}-\d{3,}$/;
     if (!STUDENT_ID_REGEX.test(studentId)) {
       return NextResponse.json({
-        error: "Invalid format! Must follow YYYY-001 (e.g. 2026-001)",
+        error: "Invalid format! Must follow YYYY-001 or YY-001 (e.g. 2026-001 or 23-0095)",
       }, { status: 400 });
     }
 
@@ -238,10 +238,10 @@ export async function PUT(req: NextRequest) {
 
     if (rest.studentId) {
       rest.studentId = String(rest.studentId).trim();
-      const STUDENT_ID_REGEX = /^\d{4}-\d{3,}$/;
+      const STUDENT_ID_REGEX = /^([a-zA-Z]-)?\d{2,4}-\d{3,}$/;
       if (!STUDENT_ID_REGEX.test(rest.studentId)) {
         return NextResponse.json({
-          error: "Invalid format! Must follow YYYY-001 (e.g. 2026-001)",
+          error: "Invalid format! Must follow YYYY-001 or YY-001 (e.g. 2026-001 or 23-0095)",
         }, { status: 400 });
       }
       try {

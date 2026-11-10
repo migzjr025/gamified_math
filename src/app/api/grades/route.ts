@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { grades, students, assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -121,7 +121,14 @@ export async function GET(req: NextRequest) {
       .leftJoin(units, eq(assessments.unitId, units.id));
 
     const data = isTeacher
-      ? await query.where(eq(grades.userId, userId))
+      ? await query.where(
+          or(
+            eq(grades.userId, userId),
+            isNull(grades.userId),
+            eq(students.userId, userId),
+            isNull(students.userId)
+          )
+        )
       : await query;
 
     return NextResponse.json(data);
@@ -194,6 +201,29 @@ export async function POST(req: NextRequest) {
     };
 
     try {
+      const existingGrade = await db
+        .select()
+        .from(grades)
+        .where(and(eq(grades.studentId, payload.studentId), eq(grades.assessmentId, payload.assessmentId)))
+        .limit(1);
+
+      if (existingGrade.length > 0) {
+        if (payload.score >= Number(existingGrade[0].score)) {
+          const updated = await db
+            .update(grades)
+            .set({
+              score: payload.score,
+              pointsEarned: payload.pointsEarned,
+              feedback: payload.feedback || existingGrade[0].feedback,
+              updatedAt: new Date(),
+            })
+            .where(eq(grades.id, existingGrade[0].id))
+            .returning();
+          return NextResponse.json(updated[0]);
+        }
+        return NextResponse.json(existingGrade[0]);
+      }
+
       const result = await db.insert(grades).values(payload).returning();
       return NextResponse.json(result[0]);
     } catch (dbErr) {
