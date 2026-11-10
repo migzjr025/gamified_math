@@ -69,7 +69,7 @@ export default function UnitsClient({ userName, role }: { userName: string; role
       ...defaultForm,
       quarter: initialQuarter,
       orderIndex: nextOrder,
-      code: `M2-Q${initialQuarter === "Quarter 1" ? 1 : initialQuarter === "Quarter 2" ? 2 : initialQuarter === "Quarter 3" ? 3 : 4}-U${nextOrder}`,
+      code: `M2-Q${initialQuarter === "Quarter 1" ? 1 : initialQuarter === "Quarter 2" ? 2 : initialQuarter === "Quarter 3" ? 3 : "S"}-U${nextOrder}`,
     });
     setOpen(true);
   }

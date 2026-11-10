@@ -91,16 +91,14 @@ function getQuarterOrder(title?: string, quarter?: string | number | null): numb
   if (qStr.includes("1") || qStr === "quarter 1") return 1;
   if (qStr.includes("2") || qStr === "quarter 2") return 2;
   if (qStr.includes("3") || qStr === "quarter 3") return 3;
-  if (qStr.includes("4") || qStr === "quarter 4") return 4;
-  if (qStr.includes("summative") || qStr === "final") return 5;
+  if (qStr.includes("summative") || qStr === "final") return 4;
 
   const t = (title || "").toLowerCase();
   if (t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return 1;
   if (t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return 2;
   if (t.includes("quarter 3") || t.includes("q3") || t.includes("unit 3")) return 3;
-  if (t.includes("quarter 4") || t.includes("q4") || t.includes("unit 4")) return 4;
-  if (t.includes("summative") || t.includes("water temple") || t.includes("final")) return 5;
-  return 6;
+  if (t.includes("summative") || t.includes("water temple") || t.includes("final")) return 4;
+  return 5;
 }
 
 function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string; toneColor: string } {
@@ -163,8 +161,7 @@ function getQuarterShortLabel(title?: string, quarter?: string | number | null):
   if (ord === 1) return "Q1";
   if (ord === 2) return "Q2";
   if (ord === 3) return "Q3";
-  if (ord === 4) return "Q4";
-  if (ord === 5) return "Summative";
+  if (ord === 4) return "Summative";
   return "Quiz";
 }
 
@@ -311,8 +308,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length
       );
 
-      const count = sortedGrades.length;
-      const percent = Math.min(100, Math.round((count / 4) * 100));
+      const quarterGrades = sortedGrades.filter((g) => getQuarterOrder(g.assessmentTitle, g.quarter) <= 3);
+      const quarterCount = quarterGrades.length;
+      const percent = Math.min(100, Math.round((quarterCount / 3) * 100));
 
       result.push({
         studentId: entry.meta.studentId || 1,
@@ -323,7 +321,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         avatarColor: entry.meta.avatarColor || "#6366f1",
         grades: sortedGrades,
         averageScore: avg,
-        completionCount: count,
+        completionCount: quarterCount,
         completionPercent: percent,
       });
     });
@@ -400,8 +398,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         const q1 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 1);
         const q2 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 2);
         const q3 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 3);
-        const q4 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 4);
-        const summative = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 5);
+        const summative = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 4);
         const rating = getScoreRating(sg.averageScore);
 
         return {
@@ -409,11 +406,10 @@ export default function GradesClient({ userName, role }: { userName: string; rol
           "Student Name": sg.studentName,
           "Grade Level": sg.gradeLevel,
           "Section": sg.section,
-          "Curriculum Completed": `${sg.completionCount} of 4 (${sg.completionPercent}%)`,
+          "Curriculum Completed": `${sg.completionCount} of 3 Quarters (${sg.completionPercent}%)`,
           "Quarter 1 (%)": q1 ? Number(q1.score) : "—",
           "Quarter 2 (%)": q2 ? Number(q2.score) : "—",
           "Quarter 3 (%)": q3 ? Number(q3.score) : "—",
-          "Quarter 4 (%)": q4 ? Number(q4.score) : "—",
           "Summative Assessment (%)": summative ? Number(summative.score) : "—",
           "Average Score (%)": Number(sg.averageScore),
           "Evaluation Status": rating.label.split("•")[1]?.trim() || "Evaluated",
@@ -424,14 +420,13 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(rows);
 
-      // Auto column widths
+      // Auto column widths (12 columns: ID, Name, Grade, Section, Curriculum, Q1, Q2, Q3, Summative, Avg, Status, Remarks)
       const colWidths = [
         { wch: 14 },
         { wch: 22 },
         { wch: 14 },
         { wch: 10 },
-        { wch: 22 },
-        { wch: 14 },
+        { wch: 24 },
         { wch: 14 },
         { wch: 14 },
         { wch: 14 },
@@ -790,7 +785,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                               {/* Progress bar */}
                               <div className="flex items-center justify-between text-xs">
                                 <span className="text-slate-300 font-semibold">
-                                  {sg.completionCount} of 4 Completed
+                                  {sg.completionCount} of 3 Quarters Completed
                                 </span>
                                 <span
                                   className="font-bold text-[11px]"
@@ -939,7 +934,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="text-slate-400">Curriculum Completion</span>
                       <span className="font-bold text-white">
-                        {activeStudent.completionCount} / 4 ({activeStudent.completionPercent}%)
+                        {activeStudent.completionCount} / 3 Quarters ({activeStudent.completionPercent}%)
                       </span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden my-2">
@@ -950,8 +945,8 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                     </div>
                     <span className="text-[11px] text-slate-400">
                       {activeStudent.completionPercent === 100
-                        ? "All 4 quarters finished in Cognitive Maze!"
-                        : `${4 - activeStudent.completionCount} stage(s) remaining`}
+                        ? "All 3 quarters finished in Cognitive Maze!"
+                        : `${Math.max(0, 3 - activeStudent.completionCount)} quarter(s) remaining`}
                     </span>
                   </div>
                 </div>
@@ -961,7 +956,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                       <BookOpen size={14} className="text-violet-400" />
-                      Quarter Evaluations (Q1 to Summative)
+                      Quarter Evaluations (Q1 to Q3 & Summative)
                     </div>
                     <button
                       onClick={() => {
@@ -994,12 +989,12 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                           <div className="flex items-center gap-3">
                             <span className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
-                              {order === 5 ? "S" : `Q${order}`}
+                              {order === 4 ? "S" : `Q${order}`}
                             </span>
                             <div>
                               <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
                               <span className="text-[11px] text-slate-400">
-                                {order === 5
+                                {order === 4
                                   ? "Summative Assessment (Water Temple)"
                                   : `Quarter ${order} Curriculum Assessment`}
                               </span>

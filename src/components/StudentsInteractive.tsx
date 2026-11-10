@@ -260,7 +260,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         feedback: string | null;
         quarter: string | null;
       }> = await response.json();
-      const quarters = ["Quarter 1", "Quarter 2", "Quarter 3", "Quarter 4"];
+      const quarters = ["Quarter 1", "Quarter 2", "Quarter 3"];
       const quarterScores = new Map<number, Map<string, number[]>>();
 
       for (const grade of gradeRows) {
