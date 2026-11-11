@@ -3,223 +3,25 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Plus,
-  Trash2,
-  Pencil,
   Search,
-  Sparkles,
-  FileText,
-  AlertTriangle,
-  X,
-  BookOpen,
-  Award,
-  Calendar,
-  CheckCircle2,
-  GraduationCap,
   Download,
-  Printer,
-  Filter,
+  GraduationCap,
   RotateCcw,
-  Check,
-  AlertCircle,
-  HelpCircle,
+  AlertTriangle,
 } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
-
-interface GradeRow {
-  id: number;
-  studentId: number;
-  assessmentId: number;
-  score: number;
-  pointsEarned: number;
-  feedback?: string | null;
-  studentName?: string;
-  studentNumber?: string;
-  assessmentTitle?: string;
-  assessmentType?: string;
-  unitTitle?: string;
-  quarter?: string | number | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-}
-
-interface StudentMeta {
-  id: number;
-  studentId: string;
-  fullName: string;
-  gradeLevel?: string;
-  section?: string;
-  gender?: string;
-  avatarColor?: string;
-}
-
-interface StudentGroup {
-  studentId: number;
-  studentName: string;
-  studentNumber: string;
-  gradeLevel: string;
-  section: string;
-  avatarColor: string;
-  grades: GradeRow[];
-  averageScore: number;
-  completionCount: number;
-  completionPercent: number;
-  lastRecordedDate?: string | null;
-}
-
-interface ToastMessage {
-  id: number;
-  text: string;
-  type: "success" | "error" | "info";
-}
-
-function formatGradeDate(rawDate?: string | null): string {
-  if (!rawDate) return "—";
-  try {
-    const d = new Date(rawDate);
-    if (isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return "—";
-  }
-}
-
-function formatGradeDateTime(rawDate?: string | null): string {
-  if (!rawDate) return "—";
-  try {
-    const d = new Date(rawDate);
-    if (isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  } catch {
-    return "—";
-  }
-}
-
-function formatRelativeTime(rawDate?: string | null): string {
-  if (!rawDate) return "";
-  try {
-    const d = new Date(rawDate);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    if (diffMs < 0) return "Just now";
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHours = Math.floor(diffMin / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffDays > 30) return "";
-    if (diffDays >= 1) return `${diffDays}d ago`;
-    if (diffHours >= 1) return `${diffHours}h ago`;
-    if (diffMin >= 1) return `${diffMin}m ago`;
-    return "Just now";
-  } catch {
-    return "";
-  }
-}
-
-function normalizeStudentNumber(raw?: string | null, fallbackId: number = 1): string {
-  if (!raw) return `2026-${String(fallbackId).padStart(3, "0")}`;
-  let clean = raw.trim();
-  if (/^s-/i.test(clean)) {
-    clean = clean.replace(/^s-/i, "").trim();
-  }
-  if (/^\d{4}-\d{3,}$/.test(clean)) {
-    return clean.replace(/^\d{4}-/, "2026-");
-  }
-  if (/^\d{1,3}$/.test(clean)) {
-    return `2026-${clean.padStart(3, "0")}`;
-  }
-  return clean;
-}
-
-function getQuarterOrder(title?: string, quarter?: string | number | null): number {
-  const qStr = String(quarter || "").toLowerCase();
-  if (qStr.includes("1") || qStr === "quarter 1") return 1;
-  if (qStr.includes("2") || qStr === "quarter 2") return 2;
-  if (qStr.includes("3") || qStr === "quarter 3") return 3;
-  if (qStr.includes("summative") || qStr === "final") return 4;
-
-  const t = (title || "").toLowerCase();
-  if (t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return 1;
-  if (t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return 2;
-  if (t.includes("quarter 3") || t.includes("q3") || t.includes("unit 3")) return 3;
-  if (t.includes("summative") || t.includes("water temple") || t.includes("final")) return 4;
-  return 5;
-}
-
-function getScoreRating(score: number): { label: string; badgeClass: string; ratingText: string; toneColor: string } {
-  if (score >= 90) {
-    return {
-      label: `${score}% • Excellent`,
-      ratingText: "Outstanding mastery of lesson objectives.",
-      badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-      toneColor: "#10b981",
-    };
-  }
-  if (score >= 75) {
-    return {
-      label: `${score}% • Good`,
-      ratingText: "Solid understanding and consistent work.",
-      badgeClass: "bg-teal-500/15 text-teal-300 border-teal-500/30",
-      toneColor: "#14b8a6",
-    };
-  }
-  if (score >= 60) {
-    return {
-      label: `${score}% • Passing`,
-      ratingText: "Passed the assessment requirement.",
-      badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-      toneColor: "#f59e0b",
-    };
-  }
-  return {
-    label: `${score}% • Needs Practice`,
-    ratingText: "Additional practice and teacher guidance needed.",
-    badgeClass: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-    toneColor: "#f43f5e",
-  };
-}
-
-function formatLaymanFeedback(feedback?: string | null): { preview: string; isGameSummary: boolean } {
-  if (!feedback || !feedback.trim()) {
-    return { preview: "Evaluated successfully", isGameSummary: false };
-  }
-  const trimmed = feedback.trim();
-  const gameMatch = trimmed.match(/Answered (\d+) of (\d+) questions correctly/i);
-  if (gameMatch) {
-    const correct = Number(gameMatch[1]);
-    const total = Number(gameMatch[2]);
-    return {
-      preview: correct === total ? `Perfect (${correct}/${total} correct)` : `${correct} of ${total} correct`,
-      isGameSummary: true,
-    };
-  }
-
-  const firstLine = trimmed.split("\n")[0];
-  return {
-    preview: firstLine.length > 40 ? firstLine.slice(0, 37) + "..." : firstLine,
-    isGameSummary: false,
-  };
-}
-
-function getQuarterShortLabel(title?: string, quarter?: string | number | null): string {
-  const ord = getQuarterOrder(title, quarter);
-  if (ord === 1) return "Q1";
-  if (ord === 2) return "Q2";
-  if (ord === 3) return "Q3";
-  if (ord === 4) return "Summative";
-  return "Quiz";
-}
+import { GradeRow, StudentMeta, StudentGroup, ToastMessage } from "./grades/types";
+import {
+  normalizeStudentNumber,
+  getQuarterOrder,
+  getScoreRating,
+  formatGradeDate,
+} from "./grades/utils";
+import ReportCardModal from "./grades/ReportCardModal";
+import GradeFormModal from "./grades/GradeFormModal";
+import DeleteConfirmDialog from "./grades/DeleteConfirmDialog";
+import ToastContainer from "./grades/ToastContainer";
+import GradesTable from "./grades/GradesTable";
 
 export default function GradesClient({ userName, role }: { userName: string; role?: string }) {
   const [items, setItems] = useState<GradeRow[]>([]);
@@ -230,7 +32,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [students, setStudents] = useState<StudentMeta[]>([]);
   const [assessments, setAssessments] = useState<{ id: number; title: string }[]>([]);
 
-  // Search & Filter controls (Feature 3)
+  // Search & Filter controls
   const [q, setQ] = useState("");
   const [filterGrade, setFilterGrade] = useState("all");
   const [filterSection, setFilterSection] = useState("all");
@@ -242,7 +44,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GradeRow | null>(null);
 
-  // In-App Toast System (Feature 5)
+  // In-App Toast System
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   function showToast(text: string, type: "success" | "error" | "info" = "success") {
@@ -359,15 +161,16 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     const result: StudentGroup[] = [];
 
     grouped.forEach((entry) => {
-      if (entry.grades.length === 0) return; // Only students with grades
+      if (entry.grades.length === 0) return;
 
       const sortedGrades = [...entry.grades].sort((a, b) => {
         return getQuarterOrder(a.assessmentTitle, a.quarter) - getQuarterOrder(b.assessmentTitle, b.quarter);
       });
 
-      const avg = sortedGrades.length > 0
-        ? Math.round(sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length)
-        : 0;
+      const avg =
+        sortedGrades.length > 0
+          ? Math.round(sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length)
+          : 0;
 
       const quarterGrades = sortedGrades.filter((g) => getQuarterOrder(g.assessmentTitle, g.quarter) <= 3);
       const quarterCount = quarterGrades.length;
@@ -399,7 +202,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     return result.sort((a, b) => a.studentName.localeCompare(b.studentName));
   }, [items, students]);
 
-  // Extract available Grade and Section options for filter dropdowns (Feature 3)
+  // Extract available Grade and Section options for filter dropdowns
   const availableGrades = useMemo(() => {
     const set = new Set<string>();
     studentGroups.forEach((g) => {
@@ -419,7 +222,6 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   // Filtered Student Groups by Search + Grade + Section + Rating
   const filteredGroups = useMemo(() => {
     return studentGroups.filter((g) => {
-      // Search term
       if (q.trim()) {
         const term = q.trim().toLowerCase();
         const matchesName = g.studentName.toLowerCase().includes(term);
@@ -428,17 +230,14 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         if (!matchesName && !matchesId && !matchesQuiz) return false;
       }
 
-      // Grade level filter
       if (filterGrade !== "all" && g.gradeLevel !== filterGrade) {
         return false;
       }
 
-      // Section filter
       if (filterSection !== "all" && g.section !== filterSection) {
         return false;
       }
 
-      // Rating filter
       if (filterRating !== "all") {
         if (filterRating === "excellent" && g.averageScore < 90) return false;
         if (filterRating === "good" && (g.averageScore < 75 || g.averageScore >= 90)) return false;
@@ -456,7 +255,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     return studentGroups.find((g) => g.studentId === selectedStudentId) || null;
   }, [studentGroups, selectedStudentId]);
 
-  // Feature 2: Master Excel Export
+  // Master Excel Export (Dynamic XLSX import)
   async function exportExcel() {
     if (studentGroups.length === 0) {
       showToast("No student grades available to export.", "error");
@@ -496,7 +295,6 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(rows);
 
-      // Auto column widths (17 columns with dates included)
       const colWidths = [
         { wch: 14 },
         { wch: 22 },
@@ -602,13 +400,26 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     }
   }
 
-  const hasActiveFilters = filterGrade !== "all" || filterSection !== "all" || filterRating !== "all" || q.trim() !== "";
+  const hasActiveFilters =
+    filterGrade !== "all" || filterSection !== "all" || filterRating !== "all" || q.trim() !== "";
 
   function resetFilters() {
     setQ("");
     setFilterGrade("all");
     setFilterSection("all");
     setFilterRating("all");
+  }
+
+  function handleOpenNewGrade(defaultStudentId?: number) {
+    setEdit(null);
+    setForm({
+      studentId: defaultStudentId ?? (students[0]?.id ?? 1),
+      assessmentId: assessments[0]?.id ?? 1,
+      score: 85,
+      pointsEarned: 85,
+      feedback: "",
+    });
+    setOpen(true);
   }
 
   return (
@@ -630,7 +441,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
               </p>
             </div>
 
-            {/* Header Action Buttons (Feature 2) */}
+            {/* Header Action Buttons */}
             <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
               <button
                 onClick={exportExcel}
@@ -642,17 +453,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
               </button>
 
               <button
-                onClick={() => {
-                  setEdit(null);
-                  setForm({
-                    studentId: students[0]?.id ?? 1,
-                    assessmentId: assessments[0]?.id ?? 1,
-                    score: 85,
-                    pointsEarned: 85,
-                    feedback: "",
-                  });
-                  setOpen(true);
-                }}
+                onClick={() => handleOpenNewGrade()}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-sm shadow-xl shadow-violet-950/50 hover:scale-[1.02] transition cursor-pointer"
               >
                 <Plus size={18} /> Log Grade
@@ -675,7 +476,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           )}
 
-          {/* Search & Fast Filters Row (Feature 3) */}
+          {/* Search & Fast Filters Row */}
           <div className="glass-card rounded-2xl p-4 border border-white/10 mb-6 space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               {/* Search input */}
@@ -762,620 +563,68 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           </div>
 
-          {/* Loading or Empty State */}
-          {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-20 rounded-2xl bg-white/5 animate-pulse" />
-              ))}
-            </div>
-          ) : filteredGroups.length === 0 ? (
-            <div className="text-center py-20 glass-card rounded-3xl border border-white/10 p-8">
-              <div className="w-16 h-16 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4 text-violet-400">
-                <Award size={32} />
-              </div>
-              <h3 className="text-xl font-extrabold text-white mb-2">No students match current filters</h3>
-              <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
-                {hasActiveFilters
-                  ? "Try resetting your search filters to see all evaluated students."
-                  : "Students will appear here automatically once they complete a quiz in the Cognitive Maze desktop game."}
-              </p>
-              {hasActiveFilters ? (
-                <button
-                  onClick={resetFilters}
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
-                >
-                  Reset Filters
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setEdit(null);
-                    setForm({
-                      studentId: students[0]?.id ?? 1,
-                      assessmentId: assessments[0]?.id ?? 1,
-                      score: 85,
-                      pointsEarned: 85,
-                      feedback: "",
-                    });
-                    setOpen(true);
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition cursor-pointer"
-                >
-                  Log First Grade
-                </button>
-              )}
-            </div>
-          ) : (
-            /* Clean Modern Grades Table */
-            <div className="glass-card rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-white/10 bg-white/[0.03]">
-                      <th className="py-4 px-6">Student</th>
-                      <th className="py-4 px-6">Curriculum Progress (Feature 4)</th>
-                      <th className="py-4 px-6">Average Score</th>
-                      <th className="py-4 px-6">Date Recorded</th>
-                      <th className="py-4 px-6 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filteredGroups.map((sg) => {
-                      const avgRating = getScoreRating(sg.averageScore);
-                      const initials = sg.studentName
-                        .split(" ")
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase();
+          {/* Grades Table */}
+          <GradesTable
+            loading={loading}
+            studentGroups={studentGroups}
+            filteredGroups={filteredGroups}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={resetFilters}
+            onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
+            onLogFirstGrade={() => handleOpenNewGrade()}
+          />
 
-                      return (
-                        <tr
-                          key={sg.studentNumber}
-                          onClick={() => setSelectedStudentId(sg.studentId)}
-                          className="hover:bg-white/[0.04] transition-all cursor-pointer group"
-                        >
-                          {/* Student Profile */}
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-3.5">
-                              <div
-                                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-white text-sm shadow-md shrink-0 ring-2 ring-white/10"
-                                style={{ backgroundColor: sg.avatarColor || "#6366f1" }}
-                              >
-                                {initials}
-                              </div>
-                              <div>
-                                <div className="font-extrabold text-white text-base group-hover:text-violet-300 transition-colors">
-                                  {sg.studentName}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-violet-500/20 text-violet-300 font-mono font-bold border border-violet-400/30">
-                                    {sg.studentNumber}
-                                  </span>
-                                  <span className="text-xs text-slate-400">
-                                    {sg.gradeLevel} • Section {sg.section}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Feature 4: Progress Bar + Quarter Chips */}
-                          <td className="py-4 px-6 min-w-[280px]">
-                            <div className="space-y-2">
-                              {/* Progress bar */}
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-slate-300 font-semibold">
-                                  {sg.completionCount} of 3 Quarters Completed
-                                </span>
-                                <span
-                                  className="font-bold text-[11px]"
-                                  style={{ color: sg.completionPercent === 100 ? "#10b981" : "#f59e0b" }}
-                                >
-                                  {sg.completionPercent}%
-                                </span>
-                              </div>
-                              <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-500 ${
-                                    sg.completionPercent === 100
-                                      ? "bg-gradient-to-r from-emerald-500 to-teal-400"
-                                      : "bg-gradient-to-r from-amber-500 to-violet-400"
-                                  }`}
-                                  style={{ width: `${sg.completionPercent}%` }}
-                                />
-                              </div>
-
-                              {/* Quarter Chips */}
-                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                {sg.grades.map((g) => {
-                                  const r = getScoreRating(g.score);
-                                  const qLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
-                                  const recordedDateStr = g.createdAt || g.updatedAt ? ` • Recorded: ${formatGradeDate(g.createdAt || g.updatedAt)}` : "";
-                                  return (
-                                    <span
-                                      key={g.id}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${r.badgeClass} shadow-sm`}
-                                      title={`${g.assessmentTitle}: ${g.score}%${recordedDateStr}`}
-                                    >
-                                      <span>{qLabel}:</span>
-                                      <span>{g.score}%</span>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Average Score & Rating */}
-                          <td className="py-4 px-6">
-                            <div className="inline-flex flex-col">
-                              <span
-                                className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-black border ${avgRating.badgeClass}`}
-                              >
-                                {avgRating.label}
-                              </span>
-                              <span className="text-[11px] text-slate-400 mt-1 max-w-[170px] truncate">
-                                {avgRating.ratingText}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Date Recorded */}
-                          <td className="py-4 px-6 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 text-slate-200 text-xs">
-                              <Calendar size={13} className="text-violet-400 shrink-0" />
-                              <span className="font-semibold">{formatGradeDate(sg.lastRecordedDate)}</span>
-                            </div>
-                            {sg.lastRecordedDate && (
-                              <div className="text-[11px] text-slate-400 mt-0.5 pl-4">
-                                {formatRelativeTime(sg.lastRecordedDate) || formatGradeDateTime(sg.lastRecordedDate)}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Action Button */}
-                          <td className="py-4 px-6 text-right whitespace-nowrap">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedStudentId(sg.studentId);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600/15 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition shadow-sm cursor-pointer"
-                            >
-                              <FileText size={14} />
-                              <span>View Report Card →</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ========================================================= */}
-          {/* STUDENT REPORT CARD MODAL + PRINTABLE PDF SLIP (Feature 2 & 4) */}
-          {/* ========================================================= */}
+          {/* Student Report Card Modal & Printable PDF Slip */}
           {activeStudent && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
-              onClick={() => setSelectedStudentId(null)}
-            >
-              <div
-                id="printable-report-card"
-                className="bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-950 border border-white/15 rounded-3xl p-6 md:p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 mb-6 pb-5 border-b border-white/10">
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-white text-xl shadow-lg shrink-0 ring-2 ring-white/15"
-                      style={{ backgroundColor: activeStudent.avatarColor || "#6366f1" }}
-                    >
-                      {activeStudent.studentName
-                        .split(" ")
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 text-[11px] font-bold mb-1 border border-violet-400/30">
-                        <Sparkles size={12} /> Student Progress Report Card
-                      </div>
-                      <h2 className="text-2xl font-black text-white">{activeStudent.studentName}</h2>
-                      <div className="flex flex-wrap items-center gap-2 mt-1">
-                        <span className="text-xs px-2.5 py-0.5 rounded-md bg-white/10 text-violet-300 font-mono font-bold">
-                          {activeStudent.studentNumber}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          {activeStudent.gradeLevel} • Section {activeStudent.section}
-                        </span>
-                        {activeStudent.lastRecordedDate && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-violet-300 font-medium pl-2 border-l border-white/10">
-                            <Calendar size={12} className="text-violet-400 shrink-0" />
-                            Latest record: {formatGradeDateTime(activeStudent.lastRecordedDate)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedStudentId(null)}
-                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer print:hidden"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-
-                {/* Performance & Curriculum Meter Banners (Feature 4) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-                  {/* Average Score Banner */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between">
-                    <span className="text-xs text-slate-400 block mb-1">Overall Class Average</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl font-black text-white">{activeStudent.averageScore}%</span>
-                      {(() => {
-                        const r = getScoreRating(activeStudent.averageScore);
-                        return (
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${r.badgeClass}`}>
-                            {r.label.split("•")[1]?.trim() || "Evaluated"}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Curriculum Progress Banner */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-slate-400">Curriculum Completion</span>
-                      <span className="font-bold text-white">
-                        {activeStudent.completionCount} / 3 Quarters ({activeStudent.completionPercent}%)
-                      </span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden my-2">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400"
-                        style={{ width: `${activeStudent.completionPercent}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] text-slate-400">
-                      {activeStudent.completionPercent === 100
-                        ? "All 3 quarters finished in Cognitive Maze!"
-                        : `${Math.max(0, 3 - activeStudent.completionCount)} quarter(s) remaining`}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Quarter Cards List */}
-                <div className="space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                      <BookOpen size={14} className="text-violet-400" />
-                      Quarter Evaluations (Q1 to Q3 & Summative)
-                    </div>
-                    <button
-                      onClick={() => {
-                        setEdit(null);
-                        setForm({
-                          studentId: activeStudent.studentId,
-                          assessmentId: assessments[0]?.id ?? 1,
-                          score: 85,
-                          pointsEarned: 85,
-                          feedback: "",
-                        });
-                        setOpen(true);
-                      }}
-                      className="px-3 py-1 rounded-lg bg-violet-600/30 hover:bg-violet-600 text-violet-200 hover:text-white border border-violet-400/30 text-xs font-bold transition cursor-pointer print:hidden"
-                    >
-                      + Log Another Grade
-                    </button>
-                  </div>
-
-                  {activeStudent.grades.map((g) => {
-                    const rating = getScoreRating(g.score);
-                    const fb = formatLaymanFeedback(g.feedback);
-                    const order = getQuarterOrder(g.assessmentTitle, g.quarter);
-
-                    return (
-                      <div
-                        key={g.id}
-                        className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-violet-500/30 transition shadow-sm"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                          <div className="flex items-center gap-3">
-                            <span className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
-                              {order === 4 ? "S" : `Q${order}`}
-                            </span>
-                            <div>
-                              <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
-                                <span className="text-[11px] text-slate-400">
-                                  {order === 4
-                                    ? "Summative Assessment (Water Temple)"
-                                    : `Quarter ${order} Curriculum Assessment`}
-                                </span>
-                                {(g.createdAt || g.updatedAt) && (
-                                  <>
-                                    <span className="text-slate-600">•</span>
-                                    <span className="inline-flex items-center gap-1 text-[11px] text-violet-300 font-medium">
-                                      <Calendar size={11} className="text-violet-400 shrink-0" />
-                                      Recorded on {formatGradeDateTime(g.createdAt || g.updatedAt)}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${rating.badgeClass}`}>
-                              {rating.label}
-                            </span>
-                            <div className="flex items-center gap-1 ml-2 print:hidden">
-                              <button
-                                onClick={() => {
-                                  setForm({
-                                    studentId: g.studentId,
-                                    assessmentId: g.assessmentId,
-                                    score: g.score,
-                                    pointsEarned: g.pointsEarned,
-                                    feedback: g.feedback ?? "",
-                                  });
-                                  setEdit(g);
-                                  setOpen(true);
-                                }}
-                                className="p-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600 text-violet-200 hover:text-white transition cursor-pointer"
-                                title="Edit Grade"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => setDeleteTarget(g)}
-                                className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition cursor-pointer"
-                                title="Delete Grade"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Remarks & Feedback */}
-                        <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-400">Questions Answered:</span>
-                            <span className="font-semibold text-slate-200">{fb.preview}</span>
-                          </div>
-                          {g.feedback && (
-                            <div className="pt-2 border-t border-white/5 text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
-                              {g.feedback}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Modal Footer with Print and Done buttons (Feature 2) */}
-                <div className="mt-8 flex items-center justify-between gap-3 pt-4 border-t border-white/10 print:hidden">
-                  <button
-                    onClick={() => window.print()}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white font-bold text-xs transition cursor-pointer"
-                    title="Print student evaluation card"
-                  >
-                    <Printer size={15} />
-                    <span>Print Report Card (PDF)</span>
-                  </button>
-
-                  <button
-                    onClick={() => setSelectedStudentId(null)}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg transition cursor-pointer"
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ========================================================= */}
-          {/* IN-APP CONFIRMATION MODAL FOR DELETIONS (Feature 5) */}
-          {/* ========================================================= */}
-          {deleteTarget && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
-              onClick={() => setDeleteTarget(null)}
-            >
-              <div
-                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
-                  <AlertTriangle size={24} />
-                </div>
-                <h3 className="text-xl font-black text-white mb-2">Delete Grade Record?</h3>
-                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
-                  Are you sure you want to remove the grade for{" "}
-                  <strong className="text-white">{deleteTarget.assessmentTitle || "this assessment"}</strong>? This action cannot be undone.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setDeleteTarget(null)}
-                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => executeDelete(deleteTarget.id)}
-                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
-                  >
-                    Delete Grade
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ========================================================= */}
-          {/* ADD / EDIT GRADE MODAL */}
-          {/* ========================================================= */}
-          {open && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-              onClick={() => {
-                setOpen(false);
-                setEdit(null);
+            <ReportCardModal
+              activeStudent={activeStudent}
+              assessments={assessments}
+              onClose={() => setSelectedStudentId(null)}
+              onAddNewGrade={(studentId) => handleOpenNewGrade(studentId)}
+              onEditGrade={(g) => {
+                setForm({
+                  studentId: g.studentId,
+                  assessmentId: g.assessmentId,
+                  score: g.score,
+                  pointsEarned: g.pointsEarned,
+                  feedback: g.feedback ?? "",
+                });
+                setEdit(g);
+                setOpen(true);
               }}
-            >
-              <div
-                className="bg-gradient-to-b from-slate-900 to-indigo-950 border border-white/10 rounded-3xl p-8 w-full max-w-lg shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h2 className="text-2xl font-extrabold text-white mb-6">
-                  {edit ? "Edit Grade & Remarks" : "Log New Grade"}
-                </h2>
-
-                {edit && (edit.createdAt || edit.updatedAt) && (
-                  <div className="mb-4 flex items-center gap-2 p-3 rounded-xl border border-white/10 bg-white/5 text-slate-300 text-xs">
-                    <Calendar size={14} className="text-violet-400 shrink-0" />
-                    <span>
-                      Grade originally recorded on:{" "}
-                      <strong className="text-white">{formatGradeDateTime(edit.createdAt || edit.updatedAt)}</strong>
-                    </span>
-                  </div>
-                )}
-
-                {formError && (
-                  <div className="mb-4 flex items-center gap-2 p-3 rounded-xl border border-rose-500/40 bg-rose-500/15 text-rose-200 text-xs">
-                    <AlertTriangle size={15} className="text-rose-400 shrink-0" />
-                    <span>{formError}</span>
-                  </div>
-                )}
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Student</label>
-                    <select
-                      value={form.studentId}
-                      onChange={(e) => setForm({ ...form, studentId: Number(e.target.value) })}
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white font-medium"
-                    >
-                      {students.map((s) => (
-                        <option key={s.id} value={s.id} className="bg-slate-900">
-                          {s.fullName} ({s.studentId || `ID: ${s.id}`})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Quiz / Activity</label>
-                    <select
-                      value={form.assessmentId}
-                      onChange={(e) => setForm({ ...form, assessmentId: Number(e.target.value) })}
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white font-medium"
-                    >
-                      {assessments.map((a) => (
-                        <option key={a.id} value={a.id} className="bg-slate-900">
-                          {a.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Score Percentage (%)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={form.score}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          score: Number(e.target.value),
-                          pointsEarned: Number(e.target.value),
-                        })
-                      }
-                      placeholder="Score %"
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Teacher Remarks & Feedback</label>
-                    <textarea
-                      value={form.feedback}
-                      onChange={(e) => setForm({ ...form, feedback: e.target.value })}
-                      placeholder="Enter strengths, areas for improvement, or encouraging notes..."
-                      rows={4}
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={() => {
-                      setOpen(false);
-                      setEdit(null);
-                    }}
-                    className="flex-1 py-3 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={save}
-                    disabled={saving}
-                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-400 text-white font-bold shadow-lg hover:scale-[1.03] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {saving ? "Saving..." : edit ? "Save Changes" : "Log Grade"}
-                  </button>
-                </div>
-              </div>
-            </div>
+              onDeleteGrade={(g) => setDeleteTarget(g)}
+            />
           )}
 
-          {/* ========================================================= */}
-          {/* FLOATING TOAST CONTAINER (Feature 5) */}
-          {/* ========================================================= */}
-          {toasts.length > 0 && (
-            <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
-              {toasts.map((toast) => (
-                <div
-                  key={toast.id}
-                  className={`pointer-events-auto flex items-center gap-3 p-4 rounded-2xl shadow-2xl border backdrop-blur-xl animate-fade-up ${
-                    toast.type === "success"
-                      ? "bg-slate-900/90 border-emerald-500/40 text-emerald-200"
-                      : toast.type === "error"
-                      ? "bg-slate-900/90 border-rose-500/40 text-rose-200"
-                      : "bg-slate-900/90 border-violet-500/40 text-violet-200"
-                  }`}
-                >
-                  {toast.type === "success" ? (
-                    <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
-                  ) : toast.type === "error" ? (
-                    <AlertTriangle size={18} className="text-rose-400 shrink-0" />
-                  ) : (
-                    <Sparkles size={18} className="text-violet-400 shrink-0" />
-                  )}
-                  <span className="text-xs font-semibold flex-1 text-white">{toast.text}</span>
-                  <button
-                    onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* In-App Confirmation Modal for Deletions */}
+          <DeleteConfirmDialog
+            target={deleteTarget}
+            onClose={() => setDeleteTarget(null)}
+            onConfirm={(id) => executeDelete(id)}
+          />
+
+          {/* Add / Edit Grade Modal */}
+          <GradeFormModal
+            open={open}
+            edit={edit}
+            form={form}
+            setForm={setForm}
+            students={students}
+            assessments={assessments}
+            saving={saving}
+            formError={formError}
+            onClose={() => {
+              setOpen(false);
+              setEdit(null);
+            }}
+            onSave={save}
+          />
+
+          {/* Floating Toast Container */}
+          <ToastContainer
+            toasts={toasts}
+            onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
+          />
         </div>
       </main>
     </div>

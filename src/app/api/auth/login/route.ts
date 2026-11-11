@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { createSession } from "@/lib/auth";
-import { verifyPassword } from "@/lib/password";
+import { verifyPassword, hashPassword, needsRehash } from "@/lib/password";
 import { createAndSendOTP } from "@/lib/otp";
 
 export async function POST(req: NextRequest) {
@@ -26,6 +26,16 @@ export async function POST(req: NextRequest) {
     const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (result.length > 0 && verifyPassword(password, result[0].password)) {
       const user = result[0];
+
+      // Auto-upgrade password hash to modern salted scrypt if stored with legacy hash
+      if (needsRehash(user.password)) {
+        try {
+          const upgradedHash = hashPassword(password);
+          await db.update(users).set({ password: upgradedHash }).where(eq(users.id, user.id));
+        } catch (upgradeErr) {
+          console.warn("Could not upgrade user password hash:", upgradeErr);
+        }
+      }
 
       // If user hasn't completed email verification or first-time login MFA
       if (!user.emailVerified || !user.firstLoginCompleted) {

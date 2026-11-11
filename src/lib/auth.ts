@@ -4,8 +4,10 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { NextRequest } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export const GAME_API_KEY = process.env.GAME_API_KEY || "COGNITIVE-QUEST-MATATAG-2026";
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.GAME_API_KEY || "cognitive-quest-session-secret-matatag-2026";
 
 export interface SessionUser {
   id: number;
@@ -14,6 +16,52 @@ export interface SessionUser {
   role: string;
   grade?: string;
   isGameClient?: boolean;
+}
+
+/**
+ * Signs a session payload with HMAC-SHA256.
+ * Format: base64url(payload).base64url(signature)
+ */
+function signSessionPayload(payload: object): string {
+  const jsonStr = JSON.stringify(payload);
+  const dataB64 = Buffer.from(jsonStr, "utf-8").toString("base64url");
+  const hmac = createHmac("sha256", SESSION_SECRET).update(dataB64).digest("base64url");
+  return `${dataB64}.${hmac}`;
+}
+
+/**
+ * Verifies a signed session token using constant-time comparison.
+ * Supports transparent fallback to legacy raw JSON during session transition.
+ */
+function verifySessionToken<T>(token: string): T | null {
+  if (!token || typeof token !== "string") return null;
+
+  if (token.includes(".")) {
+    const parts = token.split(".");
+    if (parts.length !== 2) return null;
+    const [dataB64, signature] = parts;
+    if (!dataB64 || !signature) return null;
+
+    const expectedSignature = createHmac("sha256", SESSION_SECRET).update(dataB64).digest("base64url");
+    if (signature.length !== expectedSignature.length) return null;
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      return null;
+    }
+
+    try {
+      const decoded = Buffer.from(dataB64, "base64url").toString("utf-8");
+      return JSON.parse(decoded) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  // Fallback for legacy JSON sessions (allows active sessions to transition cleanly)
+  try {
+    return JSON.parse(token) as T;
+  } catch {
+    return null;
+  }
 }
 
 export async function getSessionUser(req?: NextRequest | Request): Promise<SessionUser | null> {
@@ -43,12 +91,17 @@ export async function getSessionUser(req?: NextRequest | Request): Promise<Sessi
   const cookieStore = await cookies();
   const session = cookieStore.get("session");
   if (!session?.value) return null;
+
+  const rawUser = verifySessionToken<SessionUser & { password?: string }>(session.value);
+  if (!rawUser || typeof rawUser.id !== "number") {
+    return null;
+  }
+
   try {
-    const user = JSON.parse(session.value);
-    const dbUser = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    const dbUser = await db.select().from(users).where(eq(users.id, rawUser.id)).limit(1);
     if (dbUser.length === 0) {
-      if (user.email === "teacher@matatag.edu.ph" || user.email === "admin@matatag.edu.ph") {
-        const { password: _, ...cleanUser } = user;
+      if (rawUser.email === "teacher@matatag.edu.ph" || rawUser.email === "admin@matatag.edu.ph") {
+        const { password: _, ...cleanUser } = rawUser;
         return cleanUser as SessionUser;
       }
       return null;
@@ -56,16 +109,11 @@ export async function getSessionUser(req?: NextRequest | Request): Promise<Sessi
     const { password: _, ...cleanDbUser } = dbUser[0];
     return cleanDbUser as SessionUser;
   } catch {
-    try {
-      const fallbackUser = JSON.parse(session.value);
-      if (fallbackUser.email === "teacher@matatag.edu.ph" || fallbackUser.email === "admin@matatag.edu.ph") {
-        const { password: _, ...cleanFallback } = fallbackUser;
-        return cleanFallback as SessionUser;
-      }
-      return null;
-    } catch {
-      return null;
+    if (rawUser.email === "teacher@matatag.edu.ph" || rawUser.email === "admin@matatag.edu.ph") {
+      const { password: _, ...cleanFallback } = rawUser;
+      return cleanFallback as SessionUser;
     }
+    return null;
   }
 }
 
@@ -85,7 +133,8 @@ export async function requireAdmin() {
 
 export async function createSession(user: { id: number; email: string; name: string; role: string }) {
   const cookieStore = await cookies();
-  cookieStore.set("session", JSON.stringify(user), {
+  const token = signSessionPayload(user);
+  cookieStore.set("session", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
