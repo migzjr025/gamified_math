@@ -224,8 +224,35 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(existingGrade[0]);
       }
 
-      const result = await db.insert(grades).values(payload).returning();
-      return NextResponse.json(result[0]);
+      try {
+        const result = await db.insert(grades).values(payload).returning();
+        return NextResponse.json(result[0]);
+      } catch (insertErr: any) {
+        if (insertErr?.code === "23505" || String(insertErr).toLowerCase().includes("unique")) {
+          const conflict = await db
+            .select()
+            .from(grades)
+            .where(and(eq(grades.studentId, payload.studentId), eq(grades.assessmentId, payload.assessmentId)))
+            .limit(1);
+          if (conflict.length > 0) {
+            if (payload.score >= Number(conflict[0].score)) {
+              const updated = await db
+                .update(grades)
+                .set({
+                  score: payload.score,
+                  pointsEarned: payload.pointsEarned,
+                  feedback: payload.feedback || conflict[0].feedback,
+                  updatedAt: new Date(),
+                })
+                .where(eq(grades.id, conflict[0].id))
+                .returning();
+              return NextResponse.json(updated[0]);
+            }
+            return NextResponse.json(conflict[0]);
+          }
+        }
+        throw insertErr;
+      }
     } catch (dbErr) {
       console.warn("Grades DB offline on create, saving to memory fallback list");
       const list = getFallbackGrades();

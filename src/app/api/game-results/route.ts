@@ -169,8 +169,40 @@ export async function POST(req: NextRequest) {
           savedResult = existingResults[0];
         }
       } else {
-        const created = await db.insert(gameResults).values(payload).returning();
-        savedResult = created[0];
+        try {
+          const created = await db.insert(gameResults).values(payload).returning();
+          savedResult = created[0];
+        } catch (grInsertErr: any) {
+          if (grInsertErr?.code === "23505" || String(grInsertErr).toLowerCase().includes("unique")) {
+            const conflictGr = await db
+              .select()
+              .from(gameResults)
+              .where(and(eq(gameResults.studentId, payload.studentId), eq(gameResults.assessmentId, payload.assessmentId)))
+              .limit(1);
+            if (conflictGr.length > 0) {
+              if (payload.score >= Number(conflictGr[0].score)) {
+                const up = await db
+                  .update(gameResults)
+                  .set({
+                    score: payload.score,
+                    totalQuestions: payload.totalQuestions,
+                    correctAnswers: payload.correctAnswers,
+                    percentage: payload.percentage,
+                    feedback: payload.feedback || conflictGr[0].feedback,
+                    gradeLevel: payload.gradeLevel,
+                    userId: effectiveUserId,
+                  })
+                  .where(eq(gameResults.id, conflictGr[0].id))
+                  .returning();
+                savedResult = up[0];
+              } else {
+                savedResult = conflictGr[0];
+              }
+            }
+          } else {
+            throw grInsertErr;
+          }
+        }
       }
 
       // Server-Side Best Score Upsert into grades
@@ -197,14 +229,22 @@ export async function POST(req: NextRequest) {
           }
         } else {
           // First evaluated attempt for this assessment
-          await db.insert(grades).values({
-            userId: effectiveUserId,
-            studentId: payload.studentId,
-            assessmentId: payload.assessmentId,
-            score: payload.percentage,
-            pointsEarned: payload.percentage,
-            feedback: payload.feedback,
-          });
+          try {
+            await db.insert(grades).values({
+              userId: effectiveUserId,
+              studentId: payload.studentId,
+              assessmentId: payload.assessmentId,
+              score: payload.percentage,
+              pointsEarned: payload.percentage,
+              feedback: payload.feedback,
+            });
+          } catch (secInsertErr: any) {
+            if (secInsertErr?.code === "23505" || String(secInsertErr).toLowerCase().includes("unique")) {
+              // Concurrently created, safe to ignore
+            } else {
+              throw secInsertErr;
+            }
+          }
         }
       } catch (gradeErr) {
         console.warn("Grades best-score upsert secondary error:", gradeErr);

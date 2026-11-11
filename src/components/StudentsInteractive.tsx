@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, ChangeEvent } from "react";
 import { Plus, Trash2, Pencil, Search, Users, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle, Calendar } from "lucide-react";
-import * as XLSX from "xlsx";
 import SidebarNav from "@/components/SidebarNav";
 
 interface Student {
@@ -459,6 +458,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         };
       });
 
+      const XLSX = await import("xlsx");
       const workbook = XLSX.utils.book_new();
 
       const wsSummary = XLSX.utils.json_to_sheet(summaryRows, {
@@ -543,6 +543,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
       setImportMessage(null);
 
       const arrayBuffer = await file.arrayBuffer();
+      const XLSX = await import("xlsx");
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];

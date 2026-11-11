@@ -23,7 +23,6 @@ import {
   AlertCircle,
   HelpCircle,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import SidebarNav from "@/components/SidebarNav";
 
 interface GradeRow {
@@ -458,13 +457,14 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   }, [studentGroups, selectedStudentId]);
 
   // Feature 2: Master Excel Export
-  function exportExcel() {
+  async function exportExcel() {
     if (studentGroups.length === 0) {
       showToast("No student grades available to export.", "error");
       return;
     }
 
     try {
+      const XLSX = await import("xlsx");
       const rows = studentGroups.map((sg) => {
         const q1 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 1);
         const q2 = sg.grades.find((g) => getQuarterOrder(g.assessmentTitle, g.quarter) === 2);

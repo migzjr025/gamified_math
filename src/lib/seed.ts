@@ -13,6 +13,8 @@ export async function seedData() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified boolean DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login_completed boolean DEFAULT false;
       UPDATE students SET user_id = 1 WHERE user_id IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS grades_student_assessment_idx ON grades (student_id, assessment_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS game_results_student_assessment_idx ON game_results (student_id, assessment_id);
     `);
   } catch (migErr) {
     console.warn("Auto-migration schema patch handled:", migErr);
