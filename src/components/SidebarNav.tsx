@@ -93,9 +93,6 @@ export default function SidebarNav({ userName = "Arminda Villeno", role = "teach
               >
                 <item.icon size={18} className={active ? "text-amber-300" : "text-slate-400"} />
                 <span>{item.label}</span>
-                {item.label === "Grades" && (
-                  <span className="ml-auto text-[10px] font-bold bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded-md">NEW</span>
-                )}
               </Link>
             );
           })}
