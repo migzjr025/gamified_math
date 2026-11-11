@@ -133,17 +133,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const fullName = String(body.fullName || "").trim();
     const birthday = body.birthday ? String(body.birthday).trim() : null;
-    let age = body.age === null || body.age === undefined || body.age === "" ? null : Number(body.age);
-
-    if (birthday && (age === null || isNaN(age))) {
-      age = computeAge(birthday);
-    }
 
     if (!fullName) {
       return NextResponse.json({ error: "Student name is required." }, { status: 400 });
     }
-    if (age !== null && (!Number.isInteger(age) || age < 0)) {
-      return NextResponse.json({ error: "Age must be a non-negative whole number." }, { status: 400 });
+    if (!birthday) {
+      return NextResponse.json({ error: "Birthdate is required." }, { status: 400 });
+    }
+    const birthDate = new Date(birthday);
+    if (isNaN(birthDate.getTime())) {
+      return NextResponse.json({ error: "Please enter a valid birthdate (YYYY-MM-DD)." }, { status: 400 });
+    }
+    if (birthDate > new Date()) {
+      return NextResponse.json({ error: "Birthdate cannot be in the future." }, { status: 400 });
+    }
+    const age = computeAge(birthday);
+    if (age === null || age < 0) {
+      return NextResponse.json({ error: "Please enter a valid birthdate." }, { status: 400 });
     }
 
     const { id: _ignoreId, ...insertData } = body;
@@ -267,10 +273,19 @@ export async function PUT(req: NextRequest) {
     }
 
     if (rest.birthday !== undefined) {
-      rest.birthday = rest.birthday ? String(rest.birthday).trim() : null;
-      if (rest.age === null || rest.age === undefined || rest.age === "") {
-        rest.age = computeAge(rest.birthday);
+      const bdayStr = rest.birthday ? String(rest.birthday).trim() : "";
+      if (!bdayStr) {
+        return NextResponse.json({ error: "Birthdate is required." }, { status: 400 });
       }
+      const bDate = new Date(bdayStr);
+      if (isNaN(bDate.getTime())) {
+        return NextResponse.json({ error: "Please enter a valid birthdate (YYYY-MM-DD)." }, { status: 400 });
+      }
+      if (bDate > new Date()) {
+        return NextResponse.json({ error: "Birthdate cannot be in the future." }, { status: 400 });
+      }
+      rest.birthday = bdayStr;
+      rest.age = computeAge(bdayStr);
     }
 
     if ("age" in rest && rest.age !== null && rest.age !== undefined && rest.age !== "") {

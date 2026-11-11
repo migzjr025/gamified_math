@@ -133,8 +133,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.warn("Grades DB offline, returning demo grades list");
-    return NextResponse.json(getFallbackGrades());
+    console.warn("Grades DB fetch error (offline fallback):", error);
+    return NextResponse.json([]);
   }
 }
 

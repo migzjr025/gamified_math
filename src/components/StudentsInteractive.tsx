@@ -148,6 +148,7 @@ function buildStudentFromRow(row: Record<string, any>): Partial<Student> | null 
   const avatarColor = String(entries.avatarcolor ?? entries.avatar_color ?? entries.color ?? "#6366f1").trim() || "#6366f1";
 
   if (!fullName) return null;
+  if (!birthday) return null;
 
   return { studentId, fullName, birthday, age, gradeLevel, section, gender, avatarColor };
 }
@@ -270,6 +271,25 @@ export default function StudentsClient({ userName, role }: { userName: string; r
       setFormError("Student full name is required.");
       return;
     }
+    if (!form.birthday || !form.birthday.trim()) {
+      setFormError("Birthdate is required.");
+      return;
+    }
+    const birthDate = new Date(form.birthday.trim());
+    if (isNaN(birthDate.getTime())) {
+      setFormError("Please enter a valid birthdate (YYYY-MM-DD).");
+      return;
+    }
+    if (birthDate > new Date()) {
+      setFormError("Birthdate cannot be in the future.");
+      return;
+    }
+
+    const computedAge = calculateAge(form.birthday);
+    if (computedAge === null || computedAge < 0) {
+      setFormError("Please enter a valid birthdate.");
+      return;
+    }
 
     const isDuplicate = items.some(
       (s) => s.studentId === studentId && (edit ? s.id !== edit.id : true)
@@ -279,13 +299,12 @@ export default function StudentsClient({ userName, role }: { userName: string; r
       return;
     }
 
-    const computedAge = calculateAge(form.birthday);
     const payload = {
       ...form,
       studentId,
       fullName: form.fullName.trim(),
-      birthday: form.birthday.trim() || null,
-      age: computedAge !== null ? computedAge : (form.age ? Number(form.age) : null),
+      birthday: form.birthday.trim(),
+      age: computedAge,
     };
 
     try {
@@ -560,8 +579,13 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         .map(buildStudentFromRow)
         .filter((student): student is Partial<Student> => Boolean(student));
 
+      const missingBirthdays = rows.length - parsedStudents.length;
+
       if (!parsedStudents.length) {
-        setImportMessage({ type: "error", text: "No valid student rows were found. Include a Name column; Birthday, Age, Gender, Grade, and Section are also supported. Student IDs are optional." });
+        setImportMessage({
+          type: "error",
+          text: "No valid student rows found. Each student row must include both Name and Birthdate (YYYY-MM-DD); Gender, Grade, and Section are also supported.",
+        });
         setImportLoading(false);
         event.target.value = "";
         return;
@@ -597,10 +621,11 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         await load();
       }
 
+      const totalIssues = failed + missingBirthdays;
       setImportMessage({
-        type: failed > 0 ? "error" : "success",
-        text: failed > 0
-          ? `Imported ${imported} student(s), but ${failed} row(s) could not be added.`
+        type: totalIssues > 0 ? "error" : "success",
+        text: totalIssues > 0
+          ? `Imported ${imported} student(s). ${missingBirthdays > 0 ? `${missingBirthdays} row(s) were skipped (missing required Birthdate). ` : ""}${failed > 0 ? `${failed} row(s) failed.` : ""}`
           : `Imported ${imported} student(s) successfully from ${file.name}.`,
       });
     } catch (error) {
@@ -705,11 +730,35 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                     <p className="text-xs text-violet-300 font-semibold mb-2">{normalizeStudentId(s.studentId)} · {s.gradeLevel} · {s.section}</p>
                     <div className="flex items-center flex-wrap gap-2 text-xs text-slate-400">
                       <span className="bg-white/5 px-2 py-0.5 rounded-md">{s.gender}</span>
-                      {s.birthday && (
-                        <span className="bg-white/5 px-2 py-0.5 rounded-md text-slate-300 flex items-center gap-1.5" title="Birthday">
+                      {s.birthday ? (
+                        <span className="bg-white/5 px-2 py-0.5 rounded-md text-slate-300 flex items-center gap-1.5" title="Birthdate">
                           <Calendar size={12} className="text-violet-400" />
                           <span>{formatBirthday(s.birthday)}</span>
                         </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm({
+                              studentId: normalizeStudentId(s.studentId),
+                              fullName: s.fullName,
+                              birthday: "",
+                              age: "",
+                              gradeLevel: s.gradeLevel,
+                              section: s.section,
+                              gender: s.gender,
+                              avatarColor: s.avatarColor,
+                            });
+                            setEdit(s);
+                            setFormError("Birthdate is required. Please set the student's birthdate.");
+                            setOpen(true);
+                          }}
+                          className="bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1 hover:bg-amber-500/25 transition cursor-pointer"
+                          title="Click to set required birthdate"
+                        >
+                          <Calendar size={11} className="text-amber-400" />
+                          <span>Add birthdate *</span>
+                        </button>
                       )}
                       {studentAge !== null && (
                         <span className="bg-violet-500/20 text-violet-300 font-semibold border border-violet-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -784,14 +833,23 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                     })()}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1 px-1">Full Name</label>
-                    <input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} placeholder="Full Name" className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" />
+                    <label className="block text-xs font-medium text-slate-400 mb-1 px-1">
+                      Full Name <span className="text-rose-400 font-bold">*</span>
+                    </label>
+                    <input
+                      required
+                      value={form.fullName}
+                      onChange={e => setForm({ ...form, fullName: e.target.value })}
+                      placeholder="Full Name"
+                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40"
+                    />
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between px-1">
                       <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                         <Calendar size={13} className="text-violet-400" />
-                        <span>Birthday</span>
+                        <span>Birthdate</span>
+                        <span className="text-rose-400 font-bold">*</span>
                       </label>
                       {calculateAge(form.birthday) !== null ? (
                         <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-fade-in flex items-center gap-1">
@@ -800,11 +858,12 @@ export default function StudentsClient({ userName, role }: { userName: string; r
                           <span>{calculateAge(form.birthday) === 1 ? "year old" : "years old"}</span>
                         </span>
                       ) : (
-                        <span className="text-[11px] text-slate-400">Select birthday to calculate age</span>
+                        <span className="text-[11px] text-amber-300/80 font-medium">* Required (calculates age)</span>
                       )}
                     </div>
                     <input
                       type="date"
+                      required
                       max={new Date().toISOString().split("T")[0]}
                       value={form.birthday}
                       onChange={e => {
