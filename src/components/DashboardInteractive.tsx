@@ -1,8 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Award, BookOpen, Users, Zap, TrendingUp, Star, Trophy, ArrowRight } from "lucide-react";
+import { Award, BookOpen, Users, Zap, TrendingUp, Star, Trophy, ArrowRight, Calendar } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
+
+function formatDashboardDate(raw?: string): string {
+  if (!raw || raw === "Unknown") return "";
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
 
 interface DashboardInteractiveProps {
   userName: string;
@@ -102,7 +113,18 @@ export default function DashboardInteractive({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-white truncate">{g.studentName || "Anonymous Learner"}</p>
-                        <p className="text-xs text-slate-400 truncate">{g.assessmentTitle || "Quiz"}</p>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate mt-0.5">
+                          <span className="truncate">{g.assessmentTitle || "Quiz"}</span>
+                          {g.createdAt && formatDashboardDate(g.createdAt) && (
+                            <>
+                              <span className="text-slate-600 shrink-0">•</span>
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 shrink-0">
+                                <Calendar size={11} className="text-violet-400" />
+                                {formatDashboardDate(g.createdAt)}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <div className="text-right shrink-0">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-extrabold ${

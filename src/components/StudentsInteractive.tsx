@@ -367,6 +367,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         score: number;
         feedback: string | null;
         quarter: string | null;
+        createdAt?: string | null;
       }> = await response.json();
 
       // Map: student.id -> Map<"Quarter 1" | "Quarter 2" | "Quarter 3" | "Summative", number[]>
@@ -453,6 +454,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           Period: displayQuarter,
           Assessment: grade.assessmentTitle ?? "Quiz",
           "Score (%)": Number(grade.score),
+          "Date Recorded": grade.createdAt ? new Date(grade.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—",
           Feedback: grade.feedback ?? "Completed",
         };
       });

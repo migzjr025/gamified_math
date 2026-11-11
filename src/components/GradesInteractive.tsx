@@ -40,6 +40,7 @@ interface GradeRow {
   unitTitle?: string;
   quarter?: string | number | null;
   createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 interface StudentMeta {
@@ -63,12 +64,68 @@ interface StudentGroup {
   averageScore: number;
   completionCount: number;
   completionPercent: number;
+  lastRecordedDate?: string | null;
 }
 
 interface ToastMessage {
   id: number;
   text: string;
   type: "success" | "error" | "info";
+}
+
+function formatGradeDate(rawDate?: string | null): string {
+  if (!rawDate) return "—";
+  try {
+    const d = new Date(rawDate);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatGradeDateTime(rawDate?: string | null): string {
+  if (!rawDate) return "—";
+  try {
+    const d = new Date(rawDate);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatRelativeTime(rawDate?: string | null): string {
+  if (!rawDate) return "";
+  try {
+    const d = new Date(rawDate);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    if (diffMs < 0) return "Just now";
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 30) return "";
+    if (diffDays >= 1) return `${diffDays}d ago`;
+    if (diffHours >= 1) return `${diffHours}h ago`;
+    if (diffMin >= 1) return `${diffMin}m ago`;
+    return "Just now";
+  } catch {
+    return "";
+  }
 }
 
 function normalizeStudentNumber(raw?: string | null, fallbackId: number = 1): string {
@@ -317,6 +374,14 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const quarterCount = quarterGrades.length;
       const percent = Math.min(100, Math.round((quarterCount / 3) * 100));
 
+      let latestDate: string | null = null;
+      for (const g of sortedGrades) {
+        const d = g.updatedAt || g.createdAt;
+        if (d && (!latestDate || new Date(d).getTime() > new Date(latestDate).getTime())) {
+          latestDate = d;
+        }
+      }
+
       result.push({
         studentId: entry.meta.studentId || 1,
         studentName: entry.meta.studentName || "Student",
@@ -328,6 +393,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         averageScore: avg,
         completionCount: quarterCount,
         completionPercent: percent,
+        lastRecordedDate: latestDate,
       });
     });
 
@@ -413,11 +479,16 @@ export default function GradesClient({ userName, role }: { userName: string; rol
           "Section": sg.section,
           "Curriculum Completed": `${sg.completionCount} of 3 Quarters (${sg.completionPercent}%)`,
           "Quarter 1 (%)": q1 ? Number(q1.score) : "—",
+          "Q1 Recorded Date": q1?.createdAt ? formatGradeDate(q1.createdAt) : "—",
           "Quarter 2 (%)": q2 ? Number(q2.score) : "—",
+          "Q2 Recorded Date": q2?.createdAt ? formatGradeDate(q2.createdAt) : "—",
           "Quarter 3 (%)": q3 ? Number(q3.score) : "—",
+          "Q3 Recorded Date": q3?.createdAt ? formatGradeDate(q3.createdAt) : "—",
           "Summative Assessment (%)": summative ? Number(summative.score) : "—",
+          "Summative Recorded Date": summative?.createdAt ? formatGradeDate(summative.createdAt) : "—",
           "Average Score (%)": Number(sg.averageScore),
           "Evaluation Status": rating.label.split("•")[1]?.trim() || "Evaluated",
+          "Last Grade Recorded": formatGradeDate(sg.lastRecordedDate),
           "Remarks & Feedback": sg.grades.map((g) => `${g.assessmentTitle}: ${g.feedback || "Completed"}`).join(" | "),
         };
       });
@@ -425,7 +496,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(rows);
 
-      // Auto column widths (12 columns: ID, Name, Grade, Section, Curriculum, Q1, Q2, Q3, Summative, Avg, Status, Remarks)
+      // Auto column widths (17 columns with dates included)
       const colWidths = [
         { wch: 14 },
         { wch: 22 },
@@ -433,9 +504,14 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         { wch: 10 },
         { wch: 24 },
         { wch: 14 },
+        { wch: 16 },
         { wch: 14 },
+        { wch: 16 },
         { wch: 14 },
+        { wch: 16 },
         { wch: 24 },
+        { wch: 22 },
+        { wch: 18 },
         { wch: 18 },
         { wch: 18 },
         { wch: 60 },
@@ -740,6 +816,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                       <th className="py-4 px-6">Student</th>
                       <th className="py-4 px-6">Curriculum Progress (Feature 4)</th>
                       <th className="py-4 px-6">Average Score</th>
+                      <th className="py-4 px-6">Date Recorded</th>
                       <th className="py-4 px-6 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -815,11 +892,12 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                                 {sg.grades.map((g) => {
                                   const r = getScoreRating(g.score);
                                   const qLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
+                                  const recordedDateStr = g.createdAt || g.updatedAt ? ` • Recorded: ${formatGradeDate(g.createdAt || g.updatedAt)}` : "";
                                   return (
                                     <span
                                       key={g.id}
                                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${r.badgeClass} shadow-sm`}
-                                      title={`${g.assessmentTitle}: ${g.score}%`}
+                                      title={`${g.assessmentTitle}: ${g.score}%${recordedDateStr}`}
                                     >
                                       <span>{qLabel}:</span>
                                       <span>{g.score}%</span>
@@ -842,6 +920,19 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                                 {avgRating.ratingText}
                               </span>
                             </div>
+                          </td>
+
+                          {/* Date Recorded */}
+                          <td className="py-4 px-6 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-slate-200 text-xs">
+                              <Calendar size={13} className="text-violet-400 shrink-0" />
+                              <span className="font-semibold">{formatGradeDate(sg.lastRecordedDate)}</span>
+                            </div>
+                            {sg.lastRecordedDate && (
+                              <div className="text-[11px] text-slate-400 mt-0.5 pl-4">
+                                {formatRelativeTime(sg.lastRecordedDate) || formatGradeDateTime(sg.lastRecordedDate)}
+                              </div>
+                            )}
                           </td>
 
                           {/* Action Button */}
@@ -898,13 +989,19 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                         <Sparkles size={12} /> Student Progress Report Card
                       </div>
                       <h2 className="text-2xl font-black text-white">{activeStudent.studentName}</h2>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
                         <span className="text-xs px-2.5 py-0.5 rounded-md bg-white/10 text-violet-300 font-mono font-bold">
                           {activeStudent.studentNumber}
                         </span>
                         <span className="text-xs text-slate-400">
                           {activeStudent.gradeLevel} • Section {activeStudent.section}
                         </span>
+                        {activeStudent.lastRecordedDate && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-violet-300 font-medium pl-2 border-l border-white/10">
+                            <Calendar size={12} className="text-violet-400 shrink-0" />
+                            Latest record: {formatGradeDateTime(activeStudent.lastRecordedDate)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -998,11 +1095,22 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                             </span>
                             <div>
                               <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
-                              <span className="text-[11px] text-slate-400">
-                                {order === 4
-                                  ? "Summative Assessment (Water Temple)"
-                                  : `Quarter ${order} Curriculum Assessment`}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                                <span className="text-[11px] text-slate-400">
+                                  {order === 4
+                                    ? "Summative Assessment (Water Temple)"
+                                    : `Quarter ${order} Curriculum Assessment`}
+                                </span>
+                                {(g.createdAt || g.updatedAt) && (
+                                  <>
+                                    <span className="text-slate-600">•</span>
+                                    <span className="inline-flex items-center gap-1 text-[11px] text-violet-300 font-medium">
+                                      <Calendar size={11} className="text-violet-400 shrink-0" />
+                                      Recorded on {formatGradeDateTime(g.createdAt || g.updatedAt)}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1133,6 +1241,16 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 <h2 className="text-2xl font-extrabold text-white mb-6">
                   {edit ? "Edit Grade & Remarks" : "Log New Grade"}
                 </h2>
+
+                {edit && (edit.createdAt || edit.updatedAt) && (
+                  <div className="mb-4 flex items-center gap-2 p-3 rounded-xl border border-white/10 bg-white/5 text-slate-300 text-xs">
+                    <Calendar size={14} className="text-violet-400 shrink-0" />
+                    <span>
+                      Grade originally recorded on:{" "}
+                      <strong className="text-white">{formatGradeDateTime(edit.createdAt || edit.updatedAt)}</strong>
+                    </span>
+                  </div>
+                )}
 
                 {formError && (
                   <div className="mb-4 flex items-center gap-2 p-3 rounded-xl border border-rose-500/40 bg-rose-500/15 text-rose-200 text-xs">
