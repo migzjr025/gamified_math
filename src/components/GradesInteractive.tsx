@@ -8,8 +8,11 @@ import {
   GraduationCap,
   RotateCcw,
   AlertTriangle,
+  LayoutGrid,
+  Users,
 } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
+import CompetencyMatrixView from "./CompetencyMatrixView";
 import { GradeRow, StudentMeta, StudentGroup, ToastMessage } from "./grades/types";
 import {
   normalizeStudentNumber,
@@ -37,6 +40,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [filterGrade, setFilterGrade] = useState("all");
   const [filterSection, setFilterSection] = useState("all");
   const [filterRating, setFilterRating] = useState("all");
+  const [viewMode, setViewMode] = useState<"matrix" | "roster">("matrix");
 
   // Modals & Action States
   const [open, setOpen] = useState(false);
@@ -476,7 +480,42 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           )}
 
-          {/* Search & Fast Filters Row */}
+          {/* View Mode Toggle: Competency Matrix vs. Student Roster */}
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/5 border border-white/10 w-fit mb-8 print:hidden shadow-lg">
+            <button
+              onClick={() => setViewMode("matrix")}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                viewMode === "matrix"
+                  ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-950/50"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <LayoutGrid size={16} />
+              <span>Competency Matrix & Heatmap</span>
+            </button>
+            <button
+              onClick={() => setViewMode("roster")}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                viewMode === "roster"
+                  ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-950/50"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Users size={16} />
+              <span>Student Roster & Gradebook</span>
+            </button>
+          </div>
+
+          {viewMode === "matrix" ? (
+            <CompetencyMatrixView
+              students={studentGroups}
+              onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
+              availableGrades={availableGrades}
+              availableSections={availableSections}
+            />
+          ) : (
+            <>
+              {/* Search & Fast Filters Row */}
           <div className="glass-card rounded-2xl p-4 border border-white/10 mb-6 space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               {/* Search input */}
@@ -573,6 +612,8 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
             onLogFirstGrade={() => handleOpenNewGrade()}
           />
+        </>
+      )}
 
           {/* Student Report Card Modal & Printable PDF Slip */}
           {activeStudent && (
