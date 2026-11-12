@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { eq, and, or, isNull, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { students, gameResults, grades, studentAchievements } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -335,6 +335,54 @@ export async function DELETE(req: NextRequest) {
     const userId = sessionUser.id;
     const isAdmin = sessionUser.role === "admin" || (sessionUser as any).isGameClient;
     const body = await req.json();
+
+    // Support bulk delete via { ids: number[] }
+    if (Array.isArray(body?.ids)) {
+      const targetIds = body.ids.map(Number).filter((n: number) => !isNaN(n) && n > 0);
+      if (targetIds.length === 0) {
+        return NextResponse.json({ error: "At least one valid positive student ID is required." }, { status: 400 });
+      }
+
+      const whereClause = isAdmin
+        ? inArray(students.id, targetIds)
+        : and(inArray(students.id, targetIds), eq(students.userId, userId));
+
+      try {
+        try {
+          await db.delete(gameResults).where(inArray(gameResults.studentId, targetIds));
+        } catch (childErr) {
+          console.warn("Could not cascade delete gameResults for bulk delete:", childErr);
+        }
+        try {
+          await db.delete(grades).where(inArray(grades.studentId, targetIds));
+        } catch (childErr) {
+          console.warn("Could not cascade delete grades for bulk delete:", childErr);
+        }
+        try {
+          await db.delete(studentAchievements).where(inArray(studentAchievements.studentId, targetIds));
+        } catch (childErr) {
+          console.warn("Could not cascade delete studentAchievements for bulk delete:", childErr);
+        }
+
+        await db.delete(students).where(whereClause);
+      } catch {
+        console.warn("Students DB offline during bulk delete, removing from memory fallback list");
+        const idSet = new Set(targetIds);
+        globalForStudents.__inMemoryStudents = getFallbackStudents().filter((s) => !idSet.has(s.id));
+      }
+
+      const globalForGrades = globalThis as typeof globalThis & {
+        __inMemoryGrades?: any[];
+      };
+      if (globalForGrades.__inMemoryGrades) {
+        const idSet = new Set(targetIds);
+        globalForGrades.__inMemoryGrades = globalForGrades.__inMemoryGrades.filter(
+          (g) => !idSet.has(g.studentId)
+        );
+      }
+
+      return NextResponse.json({ success: true, count: targetIds.length, deletedIds: targetIds });
+    }
 
     const targetId = Number(body.id);
     if (!targetId || isNaN(targetId) || targetId <= 0) {

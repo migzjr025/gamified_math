@@ -8,6 +8,7 @@ import {
   GraduationCap,
   RotateCcw,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import SidebarNav from "@/components/SidebarNav";
 import { GradeRow, StudentMeta, StudentGroup, ToastMessage } from "./grades/types";
@@ -43,6 +44,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
   const [edit, setEdit] = useState<GradeRow | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GradeRow | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [bulkDeleteTargetStudentIds, setBulkDeleteTargetStudentIds] = useState<number[] | null>(null);
+  const [bulkDeletingGrades, setBulkDeletingGrades] = useState(false);
 
   // In-App Toast System
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -400,6 +404,65 @@ export default function GradesClient({ userName, role }: { userName: string; rol
     }
   }
 
+  function toggleSelectStudent(studentId: number) {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  }
+
+  function toggleSelectAllStudents() {
+    const visibleStudentIds = filteredGroups.map((sg) => sg.studentId);
+    const allSelected = visibleStudentIds.length > 0 && visibleStudentIds.every((id) => selectedStudentIds.includes(id));
+    if (allSelected) {
+      setSelectedStudentIds((prev) => prev.filter((id) => !visibleStudentIds.includes(id)));
+    } else {
+      setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...visibleStudentIds])));
+    }
+  }
+
+  async function executeBulkDeleteStudentGrades(studentIds: number[]) {
+    setBulkDeletingGrades(true);
+    try {
+      const res = await fetch("/api/grades", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentIds }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showToast(data?.error || "Failed to delete selected grades.", "error");
+        return;
+      }
+      setSelectedStudentIds((prev) => prev.filter((id) => !studentIds.includes(id)));
+      setBulkDeleteTargetStudentIds(null);
+      await load();
+      showToast(`Deleted grade records for ${studentIds.length} student(s).`, "info");
+    } catch {
+      showToast("Network error while deleting grades.", "error");
+    } finally {
+      setBulkDeletingGrades(false);
+    }
+  }
+
+  async function executeBulkDeleteGradeIds(ids: number[]) {
+    try {
+      const res = await fetch("/api/grades", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showToast(data?.error || "Failed to delete selected grades.", "error");
+        return;
+      }
+      await load();
+      showToast(`Deleted ${ids.length} grade record(s).`, "info");
+    } catch {
+      showToast("Network error while deleting grades.", "error");
+    }
+  }
+
   const hasActiveFilters =
     filterGrade !== "all" || filterSection !== "all" || filterRating !== "all" || q.trim() !== "";
 
@@ -563,6 +626,35 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             </div>
           </div>
 
+          {/* Batch Selection & Action Bar */}
+          {!loading && filteredGroups.length > 0 && selectedStudentIds.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 bg-white/[0.02] mb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">
+                  {selectedStudentIds.length} student{selectedStudentIds.length > 1 ? "s" : ""} selected
+                </span>
+                <span className="text-xs text-slate-400">
+                  Select students to bulk-delete their recorded grades and results
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedStudentIds([])}
+                  className="px-3 py-1.5 rounded-xl border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+                >
+                  Deselect All
+                </button>
+                <button
+                  onClick={() => setBulkDeleteTargetStudentIds(selectedStudentIds)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/30 transition cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete Grades for Selected ({selectedStudentIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Grades Table */}
           <GradesTable
             loading={loading}
@@ -572,6 +664,9 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             onResetFilters={resetFilters}
             onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
             onLogFirstGrade={() => handleOpenNewGrade()}
+            selectedStudentIds={selectedStudentIds}
+            onToggleSelectStudent={toggleSelectStudent}
+            onToggleSelectAll={toggleSelectAllStudents}
           />
 
           {/* Student Report Card Modal & Printable PDF Slip */}
@@ -593,6 +688,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
                 setOpen(true);
               }}
               onDeleteGrade={(g) => setDeleteTarget(g)}
+              onBulkDeleteGrades={(ids) => executeBulkDeleteGradeIds(ids)}
             />
           )}
 
@@ -602,6 +698,52 @@ export default function GradesClient({ userName, role }: { userName: string; rol
             onClose={() => setDeleteTarget(null)}
             onConfirm={(id) => executeDelete(id)}
           />
+
+          {/* BULK DELETE CONFIRMATION MODAL FOR STUDENT GRADES */}
+          {bulkDeleteTargetStudentIds && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => !bulkDeletingGrades && setBulkDeleteTargetStudentIds(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">
+                  Delete Grades for {bulkDeleteTargetStudentIds.length} Students?
+                </h3>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                  Are you sure you want to delete all recorded grades and quiz evaluation results for the <strong className="text-white">{bulkDeleteTargetStudentIds.length} selected students</strong>? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setBulkDeleteTargetStudentIds(null)}
+                    disabled={bulkDeletingGrades}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => executeBulkDeleteStudentGrades(bulkDeleteTargetStudentIds)}
+                    disabled={bulkDeletingGrades}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {bulkDeletingGrades ? (
+                      <span>Deleting...</span>
+                    ) : (
+                      <>
+                        <Trash2 size={15} />
+                        <span>Delete Grades ({bulkDeleteTargetStudentIds.length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Add / Edit Grade Modal */}
           <GradeFormModal

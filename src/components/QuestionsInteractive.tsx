@@ -58,6 +58,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
   const [form, setForm] = useState(defaultForm);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Question | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<number[] | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [seedingUnits, setSeedingUnits] = useState(false);
 
   async function load() {
@@ -197,7 +200,40 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
 
   async function remove(id: number) {
     await fetch("/api/questions", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    setSelectedIds((prev) => prev.filter((item) => item !== id));
     load();
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAll() {
+    const visibleIds = filtered.map((item) => item.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  }
+
+  async function bulkRemove(ids: number[]) {
+    setBulkDeleting(true);
+    try {
+      await fetch("/api/questions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setBulkDeleteTarget(null);
+      await load();
+    } finally {
+      setBulkDeleting(false);
+    }
   }
 
   // Stats per Quarter
@@ -510,6 +546,48 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
             </div>
           )}
 
+          {/* Batch Selection & Action Bar */}
+          {!loading && filtered.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((item) => selectedIds.includes(item.id))}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600"
+                  />
+                  <span>
+                    Select All in this view ({filtered.length})
+                  </span>
+                </label>
+                {selectedIds.length > 0 && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">
+                    {selectedIds.length} selected
+                  </span>
+                )}
+              </div>
+
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedIds([])}
+                    className="px-3 py-1.5 rounded-xl border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+                  >
+                    Deselect All
+                  </button>
+                  <button
+                    onClick={() => setBulkDeleteTarget(selectedIds)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/30 transition cursor-pointer"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete Selected ({selectedIds.length})</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Questions List */}
           {loading ? (
             <div className="grid gap-4">
@@ -536,14 +614,30 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
           ) : (
             <div className="grid gap-4">
               {filtered.map((item) => {
+                const isSelected = selectedIds.includes(item.id);
                 const qBadge = getQuarterBadge(item.quarter);
                 return (
                   <div
                     key={item.id}
-                    className="glass-card rounded-2xl p-5 hover:border-violet-500/30 transition-all duration-200 relative group border border-white/10"
+                    className={`glass-card rounded-2xl p-5 transition-all duration-200 relative group border ${
+                      isSelected
+                        ? "border-violet-500 ring-2 ring-violet-500/40 bg-violet-950/20"
+                        : "border-white/10 hover:border-violet-500/30"
+                    }`}
                   >
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                      <div className="flex-1">
+                      <div className="flex items-start gap-3.5 flex-1">
+                        {/* Question Select Checkbox */}
+                        <div className="pt-1 shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(item.id)}
+                            className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600"
+                            aria-label={`Select question ${item.id}`}
+                          />
+                        </div>
+                        <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           {/* Quarter Badge */}
                           <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border flex items-center gap-1 ${qBadge.bg}`}>
@@ -594,6 +688,7 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                           </p>
                         )}
                       </div>
+                    </div>
 
                       {/* Action buttons */}
                       <div className="flex gap-2 shrink-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
@@ -874,6 +969,52 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                     className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
                   >
                     Delete Question
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BULK DELETE CONFIRMATION MODAL */}
+          {bulkDeleteTarget && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+              onClick={() => !bulkDeleting && setBulkDeleteTarget(null)}
+            >
+              <div
+                className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                  <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-xl font-black text-white mb-2">
+                  Delete {bulkDeleteTarget.length} Questions?
+                </h3>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                  Are you sure you want to delete these <strong className="text-white">{bulkDeleteTarget.length} questions</strong>? They will be permanently removed from the question bank. This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setBulkDeleteTarget(null)}
+                    disabled={bulkDeleting}
+                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => bulkRemove(bulkDeleteTarget)}
+                    disabled={bulkDeleting}
+                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {bulkDeleting ? (
+                      <span>Deleting...</span>
+                    ) : (
+                      <>
+                        <Trash2 size={15} />
+                        <span>Delete {bulkDeleteTarget.length} Questions</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

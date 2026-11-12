@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Sparkles, X, Calendar, BookOpen, Pencil, Trash2, Printer } from "lucide-react";
+import React, { useState } from "react";
+import { Sparkles, X, Calendar, BookOpen, Pencil, Trash2, Printer, AlertTriangle } from "lucide-react";
 import { StudentGroup, GradeRow } from "./types";
 import { formatGradeDateTime, getScoreRating, formatLaymanFeedback, getQuarterOrder } from "./utils";
 
@@ -12,6 +12,7 @@ interface ReportCardModalProps {
   onEditGrade: (grade: GradeRow) => void;
   onDeleteGrade: (grade: GradeRow) => void;
   onAddNewGrade: (studentId: number) => void;
+  onBulkDeleteGrades?: (ids: number[]) => void;
 }
 
 export default function ReportCardModal({
@@ -20,7 +21,26 @@ export default function ReportCardModal({
   onEditGrade,
   onDeleteGrade,
   onAddNewGrade,
+  onBulkDeleteGrades,
 }: ReportCardModalProps) {
+  const [selectedGradeIds, setSelectedGradeIds] = useState<number[]>([]);
+  const [confirmBulkOpen, setConfirmBulkOpen] = useState(false);
+
+  function toggleSelectGrade(id: number) {
+    setSelectedGradeIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAll() {
+    const allIds = activeStudent.grades.map((g) => g.id);
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedGradeIds.includes(id));
+    if (allSelected) {
+      setSelectedGradeIds([]);
+    } else {
+      setSelectedGradeIds(allIds);
+    }
+  }
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
@@ -129,18 +149,67 @@ export default function ReportCardModal({
             </button>
           </div>
 
+          {/* Bulk Selection Bar for Grades in Report Card */}
+          {onBulkDeleteGrades && activeStudent.grades.length > 0 && (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs print:hidden">
+              <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none font-semibold">
+                <input
+                  type="checkbox"
+                  checked={
+                    activeStudent.grades.length > 0 &&
+                    activeStudent.grades.every((g) => selectedGradeIds.includes(g.id))
+                  }
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600"
+                />
+                <span>Select All ({activeStudent.grades.length})</span>
+              </label>
+              {selectedGradeIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedGradeIds([])}
+                    className="px-2 py-1 rounded-lg text-[11px] text-slate-400 hover:text-white transition cursor-pointer"
+                  >
+                    Deselect
+                  </button>
+                  <button
+                    onClick={() => setConfirmBulkOpen(true)}
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition cursor-pointer shadow-sm"
+                  >
+                    <Trash2 size={12} />
+                    <span>Delete Selected ({selectedGradeIds.length})</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeStudent.grades.map((g) => {
             const rating = getScoreRating(g.score);
             const fb = formatLaymanFeedback(g.feedback);
             const order = getQuarterOrder(g.assessmentTitle, g.quarter);
+            const isSelected = selectedGradeIds.includes(g.id);
 
             return (
               <div
                 key={g.id}
-                className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-violet-500/30 transition shadow-sm"
+                className={`p-5 rounded-2xl transition shadow-sm border ${
+                  isSelected
+                    ? "bg-violet-950/20 border-violet-500 ring-2 ring-violet-500/40"
+                    : "bg-white/5 border-white/10 hover:border-violet-500/30"
+                }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
+                    {onBulkDeleteGrades && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectGrade(g.id)}
+                        className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600 shrink-0 print:hidden"
+                        aria-label={`Select grade for ${g.assessmentTitle}`}
+                      />
+                    )}
                     <span className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
                       {order === 4 ? "S" : `Q${order}`}
                     </span>
@@ -222,6 +291,49 @@ export default function ReportCardModal({
             Done
           </button>
         </div>
+
+        {/* Bulk Delete Confirm Inside Report Card */}
+        {confirmBulkOpen && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setConfirmBulkOpen(false)}
+          >
+            <div
+              className="bg-slate-900 border border-rose-500/30 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-xl font-black text-white mb-2">
+                Delete {selectedGradeIds.length} Grade Records?
+              </h3>
+              <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+                Are you sure you want to delete <strong className="text-white">{selectedGradeIds.length} grade records</strong> for this student? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmBulkOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-slate-300 hover:bg-white/5 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (onBulkDeleteGrades) {
+                      onBulkDeleteGrades(selectedGradeIds);
+                    }
+                    setSelectedGradeIds([]);
+                    setConfirmBulkOpen(false);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg transition cursor-pointer"
+                >
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

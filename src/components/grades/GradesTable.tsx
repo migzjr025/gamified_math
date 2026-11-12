@@ -19,6 +19,9 @@ interface GradesTableProps {
   onResetFilters: () => void;
   onSelectStudent: (studentId: number) => void;
   onLogFirstGrade: () => void;
+  selectedStudentIds?: number[];
+  onToggleSelectStudent?: (studentId: number) => void;
+  onToggleSelectAll?: () => void;
 }
 
 export default function GradesTable({
@@ -29,6 +32,9 @@ export default function GradesTable({
   onResetFilters,
   onSelectStudent,
   onLogFirstGrade,
+  selectedStudentIds = [],
+  onToggleSelectStudent,
+  onToggleSelectAll,
 }: GradesTableProps) {
   if (loading) {
     return (
@@ -77,6 +83,20 @@ export default function GradesTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-white/10 bg-white/[0.03]">
+              {onToggleSelectAll && (
+                <th className="py-4 px-4 w-12 text-center">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredGroups.length > 0 &&
+                      filteredGroups.every((sg) => selectedStudentIds.includes(sg.studentId))
+                    }
+                    onChange={onToggleSelectAll}
+                    className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600"
+                    aria-label="Select all students in grades table"
+                  />
+                </th>
+              )}
               <th className="py-4 px-6">Student</th>
               <th className="py-4 px-6">Curriculum Progress</th>
               <th className="py-4 px-6">Average Score</th>
@@ -86,6 +106,7 @@ export default function GradesTable({
           </thead>
           <tbody className="divide-y divide-white/5">
             {filteredGroups.map((sg) => {
+              const isSelected = selectedStudentIds.includes(sg.studentId);
               const avgRating = getScoreRating(sg.averageScore);
               const initials = sg.studentName
                 .split(" ")
@@ -98,8 +119,26 @@ export default function GradesTable({
                 <tr
                   key={sg.studentNumber}
                   onClick={() => onSelectStudent(sg.studentId)}
-                  className="hover:bg-white/[0.04] transition-all cursor-pointer group"
+                  className={`transition-all cursor-pointer group ${
+                    isSelected
+                      ? "bg-violet-950/25 hover:bg-violet-950/40"
+                      : "hover:bg-white/[0.04]"
+                  }`}
                 >
+                  {onToggleSelectStudent && (
+                    <td
+                      className="py-4 px-4 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelectStudent(sg.studentId)}
+                        className="w-4 h-4 rounded text-violet-600 bg-white/10 border-white/20 focus:ring-violet-500 cursor-pointer accent-violet-600"
+                        aria-label={`Select student ${sg.studentName}`}
+                      />
+                    </td>
+                  )}
                   {/* Student Profile */}
                   <td className="py-4 px-6">
                     <div className="flex items-center gap-3.5">

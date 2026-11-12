@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { eq, and, or, isNull, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { grades, gameResults, students, assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -366,6 +366,48 @@ export async function DELETE(req: NextRequest) {
         globalForGrades.__inMemoryGrades = [];
       }
       return NextResponse.json({ success: true, message: "All grades and game results cleared." });
+    }
+
+    // Bulk delete grades by studentIds
+    const rawStudentIds = body?.studentIds || (searchParams.get("studentIds") ? searchParams.get("studentIds")?.split(",") : null);
+    if (Array.isArray(rawStudentIds) && rawStudentIds.length > 0) {
+      const studentIds = rawStudentIds.map(Number).filter((n) => !isNaN(n) && n > 0);
+      if (studentIds.length > 0) {
+        try {
+          await db.delete(grades).where(inArray(grades.studentId, studentIds));
+          await db.delete(gameResults).where(inArray(gameResults.studentId, studentIds));
+        } catch (delErr) {
+          console.warn("Grades bulk delete by studentIds error:", delErr);
+        }
+
+        if (globalForGrades.__inMemoryGrades) {
+          const idSet = new Set(studentIds);
+          globalForGrades.__inMemoryGrades = globalForGrades.__inMemoryGrades.filter(
+            (g) => !idSet.has(g.studentId)
+          );
+        }
+
+        return NextResponse.json({ success: true, deletedStudentIds: studentIds, count: studentIds.length });
+      }
+    }
+
+    // Bulk delete individual grades by grade IDs
+    const rawIds = body?.ids || (searchParams.get("ids") ? searchParams.get("ids")?.split(",") : null);
+    if (Array.isArray(rawIds) && rawIds.length > 0) {
+      const ids = rawIds.map(Number).filter((n) => !isNaN(n) && n > 0);
+      if (ids.length > 0) {
+        try {
+          await db.delete(grades).where(inArray(grades.id, ids));
+        } catch (err) {
+          console.warn("Grades bulk delete by ids error:", err);
+        }
+
+        const idSet = new Set(ids);
+        const list = getFallbackGrades();
+        globalForGrades.__inMemoryGrades = list.filter((g) => !idSet.has(g.id));
+
+        return NextResponse.json({ success: true, deletedIds: ids, count: ids.length });
+      }
     }
 
     if (studentIdParam) {

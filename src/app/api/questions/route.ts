@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { gameQuestions, units } from "@/db/schema";
 
@@ -237,6 +237,21 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
+    // Bulk delete support
+    if (Array.isArray(body?.ids)) {
+      const ids = body.ids.map(Number).filter((n: number) => !isNaN(n) && n > 0);
+      if (ids.length === 0) {
+        return NextResponse.json({ error: "At least one valid Question ID is required." }, { status: 400 });
+      }
+
+      try {
+        await db.delete(gameQuestions).where(inArray(gameQuestions.id, ids));
+      } catch {
+        console.warn("Questions DB offline on bulk delete, returning simulated success");
+      }
+      return NextResponse.json({ success: true, count: ids.length, deletedIds: ids });
+    }
+
     const id = Number(body.id);
     if (!id || isNaN(id) || id <= 0) {
       return NextResponse.json({ error: "A valid Question ID is required." }, { status: 400 });
@@ -247,7 +262,7 @@ export async function DELETE(req: NextRequest) {
     } catch {
       console.warn("Questions DB offline on delete, returning simulated success");
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, deletedId: id });
   } catch (error) {
     console.error("Game question delete error", error);
     return NextResponse.json({ error: "Failed to delete game question" }, { status: 500 });
