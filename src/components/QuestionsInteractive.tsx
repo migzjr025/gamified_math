@@ -100,9 +100,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
     const initialQuarter = activeQuarterTab === "All" ? "Quarter 1" : activeQuarterTab;
     const count = items.filter((i) => (i.quarter || "Quarter 1") === initialQuarter).length;
 
-    if (activeQuarterTab !== "All" && count >= 10) {
+    if (activeQuarterTab !== "All" && count >= 15) {
       setSaveError(
-        `Limit Reached: ${initialQuarter} already has ${count}/10 questions. You cannot exceed 10 questions for this quarter period.`
+        `Limit Reached: ${initialQuarter} already has ${count}/15 questions. You cannot exceed 15 questions for this quarter period.`
       );
     } else {
       setSaveError(null);
@@ -148,16 +148,16 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
       return;
     }
 
-    // Error handler: Prevent exceeding 10 questions per quarter period
+    // Error handler: Prevent exceeding 15 questions per quarter period
     const isNew = !edit;
     const isChangingQuarter = edit && edit.quarter !== form.quarter;
     if (isNew || isChangingQuarter) {
       const existingInTargetQuarter = items.filter(
         (i) => (i.quarter || "Quarter 1") === form.quarter && (!edit || i.id !== edit.id)
       );
-      if (existingInTargetQuarter.length >= 10) {
+      if (existingInTargetQuarter.length >= 15) {
         setSaveError(
-          `Question Limit Exceeded: ${form.quarter} already has 10 questions (maximum allowed is 10). You cannot add more than 10 questions to this quarter period.`
+          `Question Limit Exceeded: ${form.quarter} already has 15 questions (maximum allowed is 15). You cannot add more than 15 questions to this quarter period.`
         );
         return;
       }
@@ -221,14 +221,14 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
     });
   }, [items, activeQuarterTab, selectedGradeFilter, q]);
 
-  // Real-time capacity check for the modal form's selected quarter (Limit: 10)
+  // Real-time capacity check for the modal form's selected quarter (Limit: 15)
   const selectedQuarterCount = useMemo(() => {
     return items.filter(
       (i) => (i.quarter || "Quarter 1") === form.quarter && (!edit || i.id !== edit.id)
     ).length;
   }, [items, form.quarter, edit]);
 
-  const isQuarterOverLimit = (!edit || edit.quarter !== form.quarter) && selectedQuarterCount >= 10;
+  const isQuarterOverLimit = (!edit || edit.quarter !== form.quarter) && selectedQuarterCount >= 15;
 
   // Quarter Badge Colors
   const getQuarterBadge = (quarter?: string | null) => {
@@ -290,9 +290,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
               </div>
               <div className="flex items-baseline justify-between">
                 <div className="text-2xl font-black text-white">
-                  {stats.q1} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  {stats.q1} <span className="text-xs font-normal text-slate-400">/ 15</span>
                 </div>
-                {stats.q1 >= 10 && (
+                {stats.q1 >= 15 && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     Full
                   </span>
@@ -315,9 +315,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
               </div>
               <div className="flex items-baseline justify-between">
                 <div className="text-2xl font-black text-white">
-                  {stats.q2} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  {stats.q2} <span className="text-xs font-normal text-slate-400">/ 15</span>
                 </div>
-                {stats.q2 >= 10 && (
+                {stats.q2 >= 15 && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     Full
                   </span>
@@ -340,9 +340,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
               </div>
               <div className="flex items-baseline justify-between">
                 <div className="text-2xl font-black text-white">
-                  {stats.q3} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  {stats.q3} <span className="text-xs font-normal text-slate-400">/ 15</span>
                 </div>
-                {stats.q3 >= 10 && (
+                {stats.q3 >= 15 && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     Full
                   </span>
@@ -365,9 +365,9 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
               </div>
               <div className="flex items-baseline justify-between">
                 <div className="text-2xl font-black text-white">
-                  {stats.summative} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  {stats.summative} <span className="text-xs font-normal text-slate-400">/ 15</span>
                 </div>
-                {stats.summative >= 10 && (
+                {stats.summative >= 15 && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     Full
                   </span>
@@ -670,15 +670,15 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                       </select>
                       <div className="mt-1.5 flex items-center justify-between text-[11px]">
                         <span className="text-slate-400">Quarter capacity:</span>
-                        <span className={`font-semibold ${selectedQuarterCount >= 10 ? "text-rose-400 font-bold" : "text-slate-300"}`}>
-                          {selectedQuarterCount} / 10 questions {selectedQuarterCount >= 10 ? "(Limit Reached)" : ""}
+                        <span className={`font-semibold ${selectedQuarterCount >= 15 ? "text-rose-400 font-bold" : "text-slate-300"}`}>
+                          {selectedQuarterCount} / 15 questions {selectedQuarterCount >= 15 ? "(Limit Reached)" : ""}
                         </span>
                       </div>
                       {isQuarterOverLimit && (
                         <div className="mt-2 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-2 text-rose-200 text-xs">
                           <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
                           <span>
-                            <strong>Limit Reached:</strong> {form.quarter} already contains 10 questions. You cannot exceed 10 questions for this quarter.
+                            <strong>Limit Reached:</strong> {form.quarter} already contains 15 questions. You cannot exceed 15 questions for this quarter.
                           </span>
                         </div>
                       )}
@@ -831,7 +831,7 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                         : "bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 text-white shadow-violet-900/40 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                     }`}
                   >
-                    {edit ? "Save Changes" : isQuarterOverLimit ? "Limit Reached (10/10)" : `Create for ${form.quarter}`}
+                    {edit ? "Save Changes" : isQuarterOverLimit ? "Limit Reached (15/15)" : `Create for ${form.quarter}`}
                   </button>
                 </div>
               </div>
