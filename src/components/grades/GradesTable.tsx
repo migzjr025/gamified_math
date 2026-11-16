@@ -170,7 +170,7 @@ export default function GradesTable({
                       {/* Progress bar */}
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-slate-300 font-semibold">
-                          {sg.completionCount} of 3 Quarters Completed
+                          {sg.completionCount} of 3 Terms Completed
                         </span>
                         <span
                           className="font-bold text-[11px]"

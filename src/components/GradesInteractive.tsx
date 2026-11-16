@@ -17,6 +17,7 @@ import {
   getQuarterOrder,
   getScoreRating,
   formatGradeDate,
+  parseTermAndSummative,
 } from "./grades/utils";
 import ReportCardModal from "./grades/ReportCardModal";
 import GradeFormModal from "./grades/GradeFormModal";
@@ -171,14 +172,29 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         return getQuarterOrder(a.assessmentTitle, a.quarter) - getQuarterOrder(b.assessmentTitle, b.quarter);
       });
 
+      // Official Term grades (Term 1, Term 2, Term 3)
+      const officialTermGrades = sortedGrades.filter((g) => {
+        const parsed = parseTermAndSummative(g.quarter);
+        return !parsed.isRemedial;
+      });
+
       const avg =
-        sortedGrades.length > 0
+        officialTermGrades.length > 0
+          ? Math.round(officialTermGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / officialTermGrades.length)
+          : sortedGrades.length > 0
           ? Math.round(sortedGrades.reduce((sum, g) => sum + Number(g.score || 0), 0) / sortedGrades.length)
           : 0;
 
-      const quarterGrades = sortedGrades.filter((g) => getQuarterOrder(g.assessmentTitle, g.quarter) <= 3);
-      const quarterCount = quarterGrades.length;
-      const percent = Math.min(100, Math.round((quarterCount / 3) * 100));
+      // Count distinct completed Terms (Term 1, Term 2, Term 3)
+      const completedTerms = new Set<string>();
+      sortedGrades.forEach((g) => {
+        const parsed = parseTermAndSummative(g.quarter);
+        if (!parsed.isRemedial && (parsed.term === "Term 1" || parsed.term === "Term 2" || parsed.term === "Term 3")) {
+          completedTerms.add(parsed.term);
+        }
+      });
+      const termCount = completedTerms.size;
+      const percent = Math.min(100, Math.round((termCount / 3) * 100));
 
       let latestDate: string | null = null;
       for (const g of sortedGrades) {
@@ -197,7 +213,7 @@ export default function GradesClient({ userName, role }: { userName: string; rol
         avatarColor: entry.meta.avatarColor || "#6366f1",
         grades: sortedGrades,
         averageScore: avg,
-        completionCount: quarterCount,
+        completionCount: termCount,
         completionPercent: percent,
         lastRecordedDate: latestDate,
       });

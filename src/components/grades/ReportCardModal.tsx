@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Sparkles, X, Calendar, BookOpen, Pencil, Trash2, Printer, AlertTriangle } from "lucide-react";
 import { StudentGroup, GradeRow } from "./types";
-import { formatGradeDateTime, getScoreRating, formatLaymanFeedback, getQuarterOrder } from "./utils";
+import { formatGradeDateTime, getScoreRating, formatLaymanFeedback, getQuarterOrder, getQuarterShortLabel, parseTermAndSummative } from "./utils";
 
 interface ReportCardModalProps {
   activeStudent: StudentGroup;
@@ -187,7 +187,8 @@ export default function ReportCardModal({
           {activeStudent.grades.map((g) => {
             const rating = getScoreRating(g.score);
             const fb = formatLaymanFeedback(g.feedback);
-            const order = getQuarterOrder(g.assessmentTitle, g.quarter);
+            const parsed = parseTermAndSummative(g.quarter);
+            const badgeLabel = getQuarterShortLabel(g.assessmentTitle, g.quarter);
             const isSelected = selectedGradeIds.includes(g.id);
 
             return (
@@ -210,16 +211,16 @@ export default function ReportCardModal({
                         aria-label={`Select grade for ${g.assessmentTitle}`}
                       />
                     )}
-                    <span className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
-                      {order === 4 ? "S" : `Q${order}`}
+                    <span className="min-w-10 px-2 h-8 rounded-lg bg-violet-500/20 text-violet-300 font-black text-xs flex items-center justify-center border border-violet-400/30 shrink-0">
+                      {badgeLabel}
                     </span>
                     <div>
                       <h4 className="font-extrabold text-white text-base">{g.assessmentTitle}</h4>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
                         <span className="text-[11px] text-slate-400">
-                          {order === 4
-                            ? "Summative Assessment (Water Temple)"
-                            : `Quarter ${order} Curriculum Assessment`}
+                          {parsed.isRemedial
+                            ? "Remedial Stage (Targeted Practice)"
+                            : `${parsed.term} Curriculum Assessment — ${parsed.summative}`}
                         </span>
                         {(g.createdAt || g.updatedAt) && (
                           <>
@@ -258,13 +259,27 @@ export default function ReportCardModal({
 
                 {/* Remarks & Feedback */}
                 <div className="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-400">Questions Answered:</span>
-                    <span className="font-semibold text-slate-200">{fb.preview}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-400">Performance:</span>
+                      <span className="font-semibold text-slate-200">{fb.preview}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {fb.missedCount !== undefined && fb.missedCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[10px] font-bold">
+                          {fb.missedCount} Missed Queued
+                        </span>
+                      )}
+                      {fb.remediatedCount !== undefined && fb.remediatedCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                          {fb.remediatedCount} Remediated
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {g.feedback && (
+                  {fb.cleanFeedback && (
                     <div className="pt-2 border-t border-white/5 text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
-                      {g.feedback}
+                      {fb.cleanFeedback}
                     </div>
                   )}
                 </div>

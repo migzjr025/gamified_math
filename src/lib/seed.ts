@@ -15,6 +15,17 @@ export async function seedData() {
       UPDATE students SET user_id = 1 WHERE user_id IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS grades_student_assessment_idx ON grades (student_id, assessment_id);
       CREATE UNIQUE INDEX IF NOT EXISTS game_results_student_assessment_idx ON game_results (student_id, assessment_id);
+
+      -- Idempotent Term & Summative Migrations
+      UPDATE units SET quarter = 'Term 1 - 1st Summative' WHERE quarter = 'Quarter 1';
+      UPDATE units SET quarter = 'Term 2 - 1st Summative' WHERE quarter = 'Quarter 2';
+      UPDATE units SET quarter = 'Term 3 - 1st Summative' WHERE quarter = 'Quarter 3';
+      UPDATE units SET quarter = 'Remedial' WHERE quarter = 'Summative';
+
+      UPDATE game_questions SET quarter = 'Term 1 - 1st Summative' WHERE quarter = 'Quarter 1';
+      UPDATE game_questions SET quarter = 'Term 2 - 1st Summative' WHERE quarter = 'Quarter 2';
+      UPDATE game_questions SET quarter = 'Term 3 - 1st Summative' WHERE quarter = 'Quarter 3';
+      UPDATE game_questions SET quarter = 'Remedial' WHERE quarter = 'Summative';
     `);
   } catch (migErr) {
     console.warn("Auto-migration schema patch handled:", migErr);
@@ -50,38 +61,70 @@ export async function seedData() {
     }
   }
 
-  // Units - Matatag Math Curriculum
-  const existingUnits = await db.select().from(units).limit(1);
-  let createdUnits = existingUnits;
-  if (existingUnits.length === 0) {
-    const unitData = [
-      { code: "M3-U1", title: "Number and Number Sense", gradeLevel: "Grade 2", quarter: "Quarter 1", description: "Understanding whole numbers up to 10,000 and place value.", difficulty: 1, orderIndex: 1 },
-      { code: "M3-U2", title: "Operations and Computations", gradeLevel: "Grade 2", quarter: "Quarter 1", description: "Addition, subtraction, multiplication, and division of whole numbers.", difficulty: 2, orderIndex: 2 },
-      { code: "M3-U3", title: "Fractions and Decimals", gradeLevel: "Grade 2", quarter: "Quarter 2", description: "Introduction to fractions, equivalent fractions, and basic decimals.", difficulty: 3, orderIndex: 3 },
-      { code: "M4-U1", title: "Patterns and Algebra", gradeLevel: "Grade 1", quarter: "Quarter 2", description: "Identifying patterns and introducing simple algebraic expressions.", difficulty: 2, orderIndex: 1 },
-      { code: "M4-U2", title: "Geometry and Measurement", gradeLevel: "Grade 1", quarter: "Quarter 3", description: "Shapes, angles, perimeter, area, and measurement concepts.", difficulty: 3, orderIndex: 2 },
-      { code: "M5-U1", title: "Data Handling", gradeLevel: "Grade 2", quarter: "Quarter 3", description: "Collecting, organizing, and interpreting data using tables and graphs.", difficulty: 2, orderIndex: 1 },
-    ];
+  // 13 Canonical Term-Summative & Remedial Units
+  const CANONICAL_UNITS = [
+    { code: "M2-T1-S1", title: "Term 1 - 1st Summative Unit", gradeLevel: "Grade 2", quarter: "Term 1 - 1st Summative", description: "Whole numbers up to 1,000, place value, and reading/writing numerals.", difficulty: 1, orderIndex: 1 },
+    { code: "M2-T1-S2", title: "Term 1 - 2nd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 1 - 2nd Summative", description: "Comparing numbers, ordering numbers, and ordinal numbers up to 20th.", difficulty: 2, orderIndex: 2 },
+    { code: "M2-T1-S3", title: "Term 1 - 3rd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 1 - 3rd Summative", description: "Addition of 2- to 3-digit numbers with and without regrouping.", difficulty: 2, orderIndex: 3 },
+    { code: "M2-T1-S4", title: "Term 1 - 4th Summative Unit", gradeLevel: "Grade 2", quarter: "Term 1 - 4th Summative", description: "Subtraction of 2- to 3-digit numbers and real-world word problems.", difficulty: 3, orderIndex: 4 },
 
-    for (const u of unitData) {
+    { code: "M2-T2-S1", title: "Term 2 - 1st Summative Unit", gradeLevel: "Grade 2", quarter: "Term 2 - 1st Summative", description: "Basic multiplication concepts, repeated addition, and arrays.", difficulty: 2, orderIndex: 5 },
+    { code: "M2-T2-S2", title: "Term 2 - 2nd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 2 - 2nd Summative", description: "Multiplication tables (2, 3, 4, 5, 10) and mental multiplication.", difficulty: 2, orderIndex: 6 },
+    { code: "M2-T2-S3", title: "Term 2 - 3rd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 2 - 3rd Summative", description: "Introduction to division as equal sharing and repeated subtraction.", difficulty: 3, orderIndex: 7 },
+    { code: "M2-T2-S4", title: "Term 2 - 4th Summative Unit", gradeLevel: "Grade 2", quarter: "Term 2 - 4th Summative", description: "Fractions of a whole (unit fractions 1/2, 1/3, 1/4) and simple comparisons.", difficulty: 3, orderIndex: 8 },
+
+    { code: "M2-T3-S1", title: "Term 3 - 1st Summative Unit", gradeLevel: "Grade 2", quarter: "Term 3 - 1st Summative", description: "Basic 2D shapes, 3D solids, symmetry, and geometric patterns.", difficulty: 2, orderIndex: 9 },
+    { code: "M2-T3-S2", title: "Term 3 - 2nd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 3 - 2nd Summative", description: "Time reading (analog/digital clock), days of the week, and calendar.", difficulty: 2, orderIndex: 10 },
+    { code: "M2-T3-S3", title: "Term 3 - 3rd Summative Unit", gradeLevel: "Grade 2", quarter: "Term 3 - 3rd Summative", description: "Linear measurement (meters/centimeters) and comparing lengths.", difficulty: 3, orderIndex: 11 },
+    { code: "M2-T3-S4", title: "Term 3 - 4th Summative Unit", gradeLevel: "Grade 2", quarter: "Term 3 - 4th Summative", description: "Data collection, tally charts, pictographs, and bar graphs.", difficulty: 3, orderIndex: 12 },
+
+    { code: "M2-REMED-U1", title: "Remedial Unit", gradeLevel: "Grade 2", quarter: "Remedial", description: "Targeted remedial exercises for missed questions across Terms 1 to 3.", difficulty: 2, orderIndex: 13 },
+  ];
+
+  for (const u of CANONICAL_UNITS) {
+    const existing = await db.select().from(units).where(eq(units.code, u.code)).limit(1);
+    if (existing.length === 0) {
       await db.insert(units).values(u);
     }
   }
 
-  // Assessments
-  const existingAssessments = await db.select().from(assessments).limit(1);
-  if (existingAssessments.length === 0) {
-    const assessmentsData = [
-      { title: "Unit 1 Quiz - Number Sense", unitId: 1, type: "quiz", totalPoints: 50, dueDate: new Date("2026-05-15") },
-      { title: "Unit 2 Activity - Operations", unitId: 2, type: "activity", totalPoints: 40, dueDate: new Date("2026-05-22") },
-      { title: "Unit 3 Assessment - Fractions", unitId: 3, type: "test", totalPoints: 100, dueDate: new Date("2026-06-01") },
-      { title: "Unit 1 Project - Patterns", unitId: 4, type: "project", totalPoints: 60, dueDate: new Date("2026-05-25") },
-      { title: "Unit 2 Quiz - Geometry", unitId: 5, type: "quiz", totalPoints: 50, dueDate: new Date("2026-05-28") },
-      { title: "Unit 1 Test - Data", unitId: 6, type: "test", totalPoints: 100, dueDate: new Date("2026-06-10") },
-    ];
+  // 13 Canonical Assessments
+  const allUnits = await db.select().from(units);
+  const unitByCode = new Map<string, number>();
+  allUnits.forEach((u) => unitByCode.set(u.code, u.id));
 
-    for (const a of assessmentsData) {
-      await db.insert(assessments).values(a);
+  const CANONICAL_ASSESSMENTS = [
+    { code: "M2-T1-S1", title: "Cognitive Maze - Term 1 1st Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T1-S2", title: "Cognitive Maze - Term 1 2nd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T1-S3", title: "Cognitive Maze - Term 1 3rd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T1-S4", title: "Cognitive Maze - Term 1 4th Summative", type: "quiz", totalPoints: 100 },
+
+    { code: "M2-T2-S1", title: "Cognitive Maze - Term 2 1st Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T2-S2", title: "Cognitive Maze - Term 2 2nd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T2-S3", title: "Cognitive Maze - Term 2 3rd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T2-S4", title: "Cognitive Maze - Term 2 4th Summative", type: "quiz", totalPoints: 100 },
+
+    { code: "M2-T3-S1", title: "Cognitive Maze - Term 3 1st Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T3-S2", title: "Cognitive Maze - Term 3 2nd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T3-S3", title: "Cognitive Maze - Term 3 3rd Summative", type: "quiz", totalPoints: 100 },
+    { code: "M2-T3-S4", title: "Cognitive Maze - Term 3 4th Summative", type: "quiz", totalPoints: 100 },
+
+    { code: "M2-REMED-U1", title: "Cognitive Maze - Remedial Assessment", type: "quiz", totalPoints: 100 },
+  ];
+
+  for (const a of CANONICAL_ASSESSMENTS) {
+    const uId = unitByCode.get(a.code);
+    if (uId) {
+      const existing = await db.select().from(assessments).where(eq(assessments.unitId, uId)).limit(1);
+      if (existing.length === 0) {
+        await db.insert(assessments).values({
+          title: a.title,
+          unitId: uId,
+          type: a.type,
+          totalPoints: a.totalPoints,
+          userId: 1,
+        });
+      }
     }
   }
 

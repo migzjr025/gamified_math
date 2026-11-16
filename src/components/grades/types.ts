@@ -59,3 +59,7 @@ export interface ScoreRating {
   ratingText: string;
   toneColor: string;
 }
+
+export type TermType = "Term 1" | "Term 2" | "Term 3" | "Remedial";
+export type SummativeType = "1st Summative" | "2nd Summative" | "3rd Summative" | "4th Summative";
+

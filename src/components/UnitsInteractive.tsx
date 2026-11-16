@@ -15,14 +15,22 @@ interface Unit {
   orderIndex: number;
 }
 
-const QUARTERS = ["Quarter 1", "Quarter 2", "Quarter 3", "Summative"] as const;
-type QuarterType = typeof QUARTERS[number];
+const PERIOD_TABS = ["Term 1", "Term 2", "Term 3", "Remedial"] as const;
+type PeriodTabType = typeof PERIOD_TABS[number];
+
+const CANONICAL_PERIODS = [
+  "Term 1 - 1st Summative", "Term 1 - 2nd Summative", "Term 1 - 3rd Summative", "Term 1 - 4th Summative",
+  "Term 2 - 1st Summative", "Term 2 - 2nd Summative", "Term 2 - 3rd Summative", "Term 2 - 4th Summative",
+  "Term 3 - 1st Summative", "Term 3 - 2nd Summative", "Term 3 - 3rd Summative", "Term 3 - 4th Summative",
+  "Remedial",
+] as const;
+type CanonicalPeriodType = typeof CANONICAL_PERIODS[number];
 
 const defaultForm = {
   code: "",
   title: "",
   gradeLevel: "Grade 2",
-  quarter: "Quarter 1" as QuarterType,
+  quarter: "Term 1 - 1st Summative" as string,
   description: "",
   difficulty: 1,
   orderIndex: 1,
@@ -32,7 +40,7 @@ export default function UnitsClient({ userName, role }: { userName: string; role
   const [items, setItems] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [activeQuarterTab, setActiveQuarterTab] = useState<"All" | QuarterType>("All");
+  const [activeQuarterTab, setActiveQuarterTab] = useState<"All" | PeriodTabType>("All");
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>("All");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Unit | null>(null);
@@ -64,13 +72,13 @@ export default function UnitsClient({ userName, role }: { userName: string; role
   function handleOpenAdd() {
     setEdit(null);
     setSaveError(null);
-    const initialQuarter = activeQuarterTab === "All" ? "Quarter 1" : activeQuarterTab;
+    const initialQuarter = activeQuarterTab === "All" ? "Term 1 - 1st Summative" : activeQuarterTab === "Remedial" ? "Remedial" : `${activeQuarterTab} - 1st Summative`;
     const nextOrder = items.length + 1;
     setForm({
       ...defaultForm,
       quarter: initialQuarter,
       orderIndex: nextOrder,
-      code: `M2-Q${initialQuarter === "Quarter 1" ? 1 : initialQuarter === "Quarter 2" ? 2 : initialQuarter === "Quarter 3" ? 3 : "S"}-U${nextOrder}`,
+      code: `M2-U${nextOrder}`,
     });
     setOpen(true);
   }
@@ -82,7 +90,7 @@ export default function UnitsClient({ userName, role }: { userName: string; role
       code: unit.code,
       title: unit.title,
       gradeLevel: unit.gradeLevel,
-      quarter: (unit.quarter as QuarterType) || "Quarter 1",
+      quarter: unit.quarter || "Term 1 - 1st Summative",
       description: unit.description,
       difficulty: unit.difficulty,
       orderIndex: unit.orderIndex,
@@ -170,18 +178,22 @@ export default function UnitsClient({ userName, role }: { userName: string; role
 
   // Stats
   const stats = useMemo(() => {
-    const q1 = items.filter((u) => (u.quarter || "Quarter 1") === "Quarter 1").length;
-    const q2 = items.filter((u) => u.quarter === "Quarter 2").length;
-    const q3 = items.filter((u) => u.quarter === "Quarter 3").length;
-    const summative = items.filter((u) => u.quarter === "Summative").length;
-    return { q1, q2, q3, summative, total: items.length };
+    const t1 = items.filter((u) => (u.quarter || "").includes("Term 1") || (u.quarter || "") === "Quarter 1").length;
+    const t2 = items.filter((u) => (u.quarter || "").includes("Term 2") || (u.quarter || "") === "Quarter 2").length;
+    const t3 = items.filter((u) => (u.quarter || "").includes("Term 3") || (u.quarter || "") === "Quarter 3").length;
+    const remedial = items.filter((u) => (u.quarter || "").toLowerCase().includes("remedial") || (u.quarter || "").toLowerCase().includes("summative")).length;
+    return { t1, t2, t3, remedial, total: items.length };
   }, [items]);
 
   // Filtered
   const filtered = useMemo(() => {
     return items.filter((item) => {
-      const itemQuarter = item.quarter || "Quarter 1";
-      const matchesQuarter = activeQuarterTab === "All" || itemQuarter === activeQuarterTab;
+      const qStr = item.quarter || "Term 1";
+      const matchesQuarter =
+        activeQuarterTab === "All" ||
+        (activeQuarterTab === "Remedial"
+          ? qStr.toLowerCase().includes("remedial") || qStr.toLowerCase().includes("summative")
+          : qStr.includes(activeQuarterTab));
       const matchesGrade = selectedGradeFilter === "All" || item.gradeLevel === selectedGradeFilter;
       const query = q.toLowerCase().trim();
       const matchesQuery =
@@ -194,19 +206,20 @@ export default function UnitsClient({ userName, role }: { userName: string; role
   }, [items, activeQuarterTab, selectedGradeFilter, q]);
 
   const getQuarterBadge = (quarter?: string | null) => {
-    const q = quarter || "Quarter 1";
-    switch (q) {
-      case "Quarter 1":
-        return { label: "Quarter 1", bg: "bg-sky-500/15 text-sky-300 border-sky-500/30", icon: "🌱" };
-      case "Quarter 2":
-        return { label: "Quarter 2", bg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: "🌿" };
-      case "Quarter 3":
-        return { label: "Quarter 3", bg: "bg-amber-500/15 text-amber-300 border-amber-500/30", icon: "🌻" };
-      case "Summative":
-        return { label: "Summative", bg: "bg-fuchsia-500/20 text-fuchsia-200 border-fuchsia-500/40", icon: "🏆" };
-      default:
-        return { label: q, bg: "bg-slate-700 text-slate-200 border-slate-600", icon: "📘" };
+    const q = quarter || "Term 1 - 1st Summative";
+    if (q.toLowerCase().includes("remedial") || q.toLowerCase().includes("summative")) {
+      return { label: q, bg: "bg-fuchsia-500/20 text-fuchsia-200 border-fuchsia-500/40", icon: "💧" };
     }
+    if (q.includes("Term 1") || q.includes("Quarter 1")) {
+      return { label: q, bg: "bg-sky-500/15 text-sky-300 border-sky-500/30", icon: "🌱" };
+    }
+    if (q.includes("Term 2") || q.includes("Quarter 2")) {
+      return { label: q, bg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: "🌿" };
+    }
+    if (q.includes("Term 3") || q.includes("Quarter 3")) {
+      return { label: q, bg: "bg-amber-500/15 text-amber-300 border-amber-500/30", icon: "🌻" };
+    }
+    return { label: q, bg: "bg-slate-700 text-slate-200 border-slate-600", icon: "📘" };
   };
 
   return (
@@ -238,74 +251,74 @@ export default function UnitsClient({ userName, role }: { userName: string; role
             </div>
           </div>
 
-          {/* Quick Quarter Stats Cards */}
+          {/* Quick Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div
-              onClick={() => setActiveQuarterTab("Quarter 1")}
+              onClick={() => setActiveQuarterTab("Term 1")}
               className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 1"
+                activeQuarterTab === "Term 1"
                   ? "bg-sky-500/20 border-sky-400/50 shadow-lg shadow-sky-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Quarter 1</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Term 1</span>
                 <span className="text-lg">🌱</span>
               </div>
-              <div className="text-2xl font-black text-white">{stats.q1}</div>
+              <div className="text-2xl font-black text-white">{stats.t1}</div>
               <p className="text-xs text-slate-400 mt-1">Foundation & Numbers</p>
             </div>
 
             <div
-              onClick={() => setActiveQuarterTab("Quarter 2")}
+              onClick={() => setActiveQuarterTab("Term 2")}
               className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 2"
+                activeQuarterTab === "Term 2"
                   ? "bg-emerald-500/20 border-emerald-400/50 shadow-lg shadow-emerald-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Quarter 2</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Term 2</span>
                 <span className="text-lg">🌿</span>
               </div>
-              <div className="text-2xl font-black text-white">{stats.q2}</div>
+              <div className="text-2xl font-black text-white">{stats.t2}</div>
               <p className="text-xs text-slate-400 mt-1">Operations & Patterns</p>
             </div>
 
             <div
-              onClick={() => setActiveQuarterTab("Quarter 3")}
+              onClick={() => setActiveQuarterTab("Term 3")}
               className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 3"
+                activeQuarterTab === "Term 3"
                   ? "bg-amber-500/20 border-amber-400/50 shadow-lg shadow-amber-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Quarter 3</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Term 3</span>
                 <span className="text-lg">🌻</span>
               </div>
-              <div className="text-2xl font-black text-white">{stats.q3}</div>
+              <div className="text-2xl font-black text-white">{stats.t3}</div>
               <p className="text-xs text-slate-400 mt-1">Geometry & Data</p>
             </div>
 
             <div
-              onClick={() => setActiveQuarterTab("Summative")}
+              onClick={() => setActiveQuarterTab("Remedial")}
               className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Summative"
+                activeQuarterTab === "Remedial"
                   ? "bg-fuchsia-500/25 border-fuchsia-400/50 shadow-lg shadow-fuchsia-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Summative</span>
-                <span className="text-lg">🏆</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Remedial</span>
+                <span className="text-lg">💧</span>
               </div>
-              <div className="text-2xl font-black text-white">{stats.summative}</div>
-              <p className="text-xs text-slate-400 mt-1">Review & Exam Modules</p>
+              <div className="text-2xl font-black text-white">{stats.remedial}</div>
+              <p className="text-xs text-slate-400 mt-1">Review & Remedial Modules</p>
             </div>
           </div>
 
-          {/* Quarter Tabs Filter Navigation */}
+          {/* Term Tabs Filter Navigation */}
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-2 border-b border-white/10">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -316,65 +329,65 @@ export default function UnitsClient({ userName, role }: { userName: string; role
                     : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Layers size={14} /> All Quarters
+                <Layers size={14} /> All Terms
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 font-mono">
                   {stats.total}
                 </span>
               </button>
 
               <button
-                onClick={() => setActiveQuarterTab("Quarter 1")}
+                onClick={() => setActiveQuarterTab("Term 1")}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 1"
+                  activeQuarterTab === "Term 1"
                     ? "bg-sky-500 text-slate-950 shadow-md font-extrabold"
                     : "bg-white/5 text-slate-300 hover:bg-sky-500/10 hover:text-sky-300"
                 }`}
               >
-                🌱 Quarter 1
+                🌱 Term 1
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-sky-200 font-mono">
-                  {stats.q1}
+                  {stats.t1}
                 </span>
               </button>
 
               <button
-                onClick={() => setActiveQuarterTab("Quarter 2")}
+                onClick={() => setActiveQuarterTab("Term 2")}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 2"
+                  activeQuarterTab === "Term 2"
                     ? "bg-emerald-500 text-slate-950 shadow-md font-extrabold"
                     : "bg-white/5 text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-300"
                 }`}
               >
-                🌿 Quarter 2
+                🌿 Term 2
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-emerald-200 font-mono">
-                  {stats.q2}
+                  {stats.t2}
                 </span>
               </button>
 
               <button
-                onClick={() => setActiveQuarterTab("Quarter 3")}
+                onClick={() => setActiveQuarterTab("Term 3")}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 3"
+                  activeQuarterTab === "Term 3"
                     ? "bg-amber-500 text-slate-950 shadow-md font-extrabold"
                     : "bg-white/5 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300"
                 }`}
               >
-                🌻 Quarter 3
+                🌻 Term 3
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-amber-200 font-mono">
-                  {stats.q3}
+                  {stats.t3}
                 </span>
               </button>
 
               <button
-                onClick={() => setActiveQuarterTab("Summative")}
+                onClick={() => setActiveQuarterTab("Remedial")}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Summative"
+                  activeQuarterTab === "Remedial"
                     ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-md font-extrabold"
                     : "bg-white/5 text-slate-300 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
                 }`}
               >
-                🏆 Summative
+                💧 Remedial
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-fuchsia-200 font-mono">
-                  {stats.summative}
+                  {stats.remedial}
                 </span>
               </button>
             </div>
@@ -566,21 +579,22 @@ export default function UnitsClient({ userName, role }: { userName: string; role
                     />
                   </div>
 
-                  {/* Quarter & Grade Level */}
+                  {/* Term / Stage & Grade Level */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Quarter Period <span className="text-rose-400">*</span>
+                        Term / Stage <span className="text-rose-400">*</span>
                       </label>
                       <select
                         value={form.quarter}
-                        onChange={(e) => setForm({ ...form, quarter: e.target.value as QuarterType })}
+                        onChange={(e) => setForm({ ...form, quarter: e.target.value })}
                         className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white cursor-pointer"
                       >
-                        <option value="Quarter 1" className="bg-slate-900">🌱 Quarter 1</option>
-                        <option value="Quarter 2" className="bg-slate-900">🌿 Quarter 2</option>
-                        <option value="Quarter 3" className="bg-slate-900">🌻 Quarter 3</option>
-                        <option value="Summative" className="bg-slate-900">🏆 Summative</option>
+                        {CANONICAL_PERIODS.map((p) => (
+                          <option key={p} value={p} className="bg-slate-900">
+                            {p === "Remedial" ? "💧 Remedial" : p}
+                          </option>
+                        ))}
                       </select>
                     </div>
 

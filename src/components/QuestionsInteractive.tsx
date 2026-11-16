@@ -28,13 +28,51 @@ interface UnitOption {
   gradeLevel?: string | null;
 }
 
-const QUARTERS = ["Quarter 1", "Quarter 2", "Quarter 3", "Summative"] as const;
-type QuarterType = typeof QUARTERS[number];
+export const TERMS = ["Term 1", "Term 2", "Term 3", "Remedial"] as const;
+export type TermType = typeof TERMS[number];
+
+export const SUMMATIVES = ["1st Summative", "2nd Summative", "3rd Summative", "4th Summative"] as const;
+export type SummativeType = typeof SUMMATIVES[number];
+
+export function parseQuarterSlot(quarter?: string | null): {
+  term: TermType;
+  summative: SummativeType | "Remedial";
+  isRemedial: boolean;
+  label: string;
+  slotKey: string;
+} {
+  const norm = String(quarter || "").trim();
+  if (!norm || norm === "Quarter 1" || norm === "Term 1") {
+    return { term: "Term 1", summative: "1st Summative", isRemedial: false, label: "Term 1 - 1st Summative", slotKey: "t1_s1" };
+  }
+  if (norm === "Quarter 2" || norm === "Term 2") {
+    return { term: "Term 2", summative: "1st Summative", isRemedial: false, label: "Term 2 - 1st Summative", slotKey: "t2_s1" };
+  }
+  if (norm === "Quarter 3" || norm === "Term 3") {
+    return { term: "Term 3", summative: "1st Summative", isRemedial: false, label: "Term 3 - 1st Summative", slotKey: "t3_s1" };
+  }
+  if (norm === "Summative" || norm === "Remedial") {
+    return { term: "Remedial", summative: "Remedial", isRemedial: true, label: "Remedial", slotKey: "remedial" };
+  }
+  const m = norm.match(/Term\s*([1-3])\s*[-–—:]\s*([1-4])(?:st|nd|rd|th)?\s*Summative/i);
+  if (m) {
+    const s = m[2] === "1" ? "1st" : m[2] === "2" ? "2nd" : m[2] === "3" ? "3rd" : "4th";
+    return {
+      term: `Term ${m[1]}` as TermType,
+      summative: `${s} Summative` as SummativeType,
+      isRemedial: false,
+      label: `Term ${m[1]} - ${s} Summative`,
+      slotKey: `t${m[1]}_s${m[2]}`,
+    };
+  }
+  return { term: "Term 1", summative: "1st Summative", isRemedial: false, label: "Term 1 - 1st Summative", slotKey: "t1_s1" };
+}
 
 const defaultForm = {
   unitId: 1,
   gradeLevel: "Grade 2",
-  quarter: "Quarter 1" as QuarterType,
+  selectedTerm: "Term 1" as TermType,
+  selectedSummative: "1st Summative" as SummativeType,
   difficulty: 1,
   prompt: "",
   optionA: "",
@@ -51,7 +89,8 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [activeQuarterTab, setActiveQuarterTab] = useState<"All" | QuarterType>("All");
+  const [activeTermTab, setActiveTermTab] = useState<"All" | TermType>("All");
+  const [activeSummativeFilter, setActiveSummativeFilter] = useState<"All" | SummativeType>("All");
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>("All");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Question | null>(null);
@@ -100,12 +139,14 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
 
   function handleOpenAdd() {
     setEdit(null);
-    const initialQuarter = activeQuarterTab === "All" ? "Quarter 1" : activeQuarterTab;
-    const count = items.filter((i) => (i.quarter || "Quarter 1") === initialQuarter).length;
+    const initialTerm = activeTermTab === "All" ? "Term 1" : activeTermTab;
+    const initialSummative = activeSummativeFilter === "All" ? "1st Summative" : activeSummativeFilter;
+    const targetSlot = initialTerm === "Remedial" ? "Remedial" : `${initialTerm} - ${initialSummative}`;
+    const count = items.filter((i) => parseQuarterSlot(i.quarter).label === targetSlot).length;
 
-    if (activeQuarterTab !== "All" && count >= 10) {
+    if (count >= 10) {
       setSaveError(
-        `Limit Reached: ${initialQuarter} already has ${count}/10 questions. You cannot exceed 10 questions for this quarter period.`
+        `Limit Reached: ${targetSlot} already has ${count}/10 questions. You cannot exceed 10 questions for this slot.`
       );
     } else {
       setSaveError(null);
@@ -113,7 +154,8 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
 
     setForm({
       ...defaultForm,
-      quarter: initialQuarter,
+      selectedTerm: initialTerm,
+      selectedSummative: initialSummative,
       unitId: units[0]?.id ?? 1,
     });
     setOpen(true);
@@ -122,10 +164,12 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
   function handleOpenEdit(item: Question) {
     setSaveError(null);
     setEdit(item);
+    const slot = parseQuarterSlot(item.quarter);
     setForm({
       unitId: item.unitId,
       gradeLevel: item.gradeLevel,
-      quarter: (item.quarter as QuarterType) || "Quarter 1",
+      selectedTerm: slot.term,
+      selectedSummative: slot.isRemedial ? "1st Summative" : (slot.summative as SummativeType),
       difficulty: item.difficulty,
       prompt: item.prompt,
       optionA: item.optionA,
@@ -146,36 +190,32 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
       return;
     }
 
-    if (units.length === 0) {
-      setSaveError("No curriculum units exist. Please initialize units first.");
+    const targetSlotLabel = form.selectedTerm === "Remedial" ? "Remedial" : `${form.selectedTerm} - ${form.selectedSummative}`;
+
+    // Error handler: Prevent exceeding 10 questions per Summative slot
+    const existingInTargetSlot = items.filter(
+      (i) => parseQuarterSlot(i.quarter).label === targetSlotLabel && (!edit || i.id !== edit.id)
+    );
+    if (existingInTargetSlot.length >= 10) {
+      setSaveError(
+        `Question Limit Exceeded: ${targetSlotLabel} already has 10 questions (maximum allowed is 10). You cannot add more than 10 questions to this slot.`
+      );
       return;
     }
 
-    // Error handler: Prevent exceeding 10 questions per quarter period
-    const isNew = !edit;
-    const isChangingQuarter = edit && edit.quarter !== form.quarter;
-    if (isNew || isChangingQuarter) {
-      const existingInTargetQuarter = items.filter(
-        (i) => (i.quarter || "Quarter 1") === form.quarter && (!edit || i.id !== edit.id)
-      );
-      if (existingInTargetQuarter.length >= 10) {
-        setSaveError(
-          `Question Limit Exceeded: ${form.quarter} already has 10 questions (maximum allowed is 10). You cannot add more than 10 questions to this quarter period.`
-        );
-        return;
-      }
-    }
-
     const payload = {
-      ...form,
       unitId: Number(form.unitId),
+      gradeLevel: form.gradeLevel,
+      quarter: targetSlotLabel,
       difficulty: Number(form.difficulty) || 1,
       prompt: form.prompt.trim(),
       optionA: form.optionA.trim(),
       optionB: form.optionB.trim(),
       optionC: form.optionC.trim(),
       optionD: form.optionD.trim(),
+      correctAnswer: form.correctAnswer,
       explanation: form.explanation?.trim() || null,
+      isActive: form.isActive,
     };
 
     try {
@@ -236,50 +276,85 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
     }
   }
 
-  // Stats per Quarter
+  // Stats per Term & Summative Slots
   const stats = useMemo(() => {
-    const q1 = items.filter((i) => (i.quarter || "Quarter 1") === "Quarter 1").length;
-    const q2 = items.filter((i) => i.quarter === "Quarter 2").length;
-    const q3 = items.filter((i) => i.quarter === "Quarter 3").length;
-    const summative = items.filter((i) => i.quarter === "Summative").length;
-    return { q1, q2, q3, summative, total: items.length };
+    const slotCounts: Record<string, number> = {};
+    let t1Total = 0;
+    let t2Total = 0;
+    let t3Total = 0;
+    let remedialTotal = 0;
+
+    items.forEach((item) => {
+      const slot = parseQuarterSlot(item.quarter);
+      slotCounts[slot.slotKey] = (slotCounts[slot.slotKey] || 0) + 1;
+      if (slot.term === "Term 1") t1Total++;
+      else if (slot.term === "Term 2") t2Total++;
+      else if (slot.term === "Term 3") t3Total++;
+      else if (slot.term === "Remedial") remedialTotal++;
+    });
+
+    return {
+      t1Total,
+      t2Total,
+      t3Total,
+      remedialTotal,
+      t1_s1: slotCounts["t1_s1"] || 0,
+      t1_s2: slotCounts["t1_s2"] || 0,
+      t1_s3: slotCounts["t1_s3"] || 0,
+      t1_s4: slotCounts["t1_s4"] || 0,
+      t2_s1: slotCounts["t2_s1"] || 0,
+      t2_s2: slotCounts["t2_s2"] || 0,
+      t2_s3: slotCounts["t2_s3"] || 0,
+      t2_s4: slotCounts["t2_s4"] || 0,
+      t3_s1: slotCounts["t3_s1"] || 0,
+      t3_s2: slotCounts["t3_s2"] || 0,
+      t3_s3: slotCounts["t3_s3"] || 0,
+      t3_s4: slotCounts["t3_s4"] || 0,
+      total: items.length,
+    };
   }, [items]);
 
   // Filtered list
   const filtered = useMemo(() => {
     return items.filter((item) => {
-      const itemQuarter = item.quarter || "Quarter 1";
-      const matchesQuarter = activeQuarterTab === "All" || itemQuarter === activeQuarterTab;
+      const slot = parseQuarterSlot(item.quarter);
+      const matchesTerm = activeTermTab === "All" || slot.term === activeTermTab;
+      const matchesSummative =
+        activeTermTab === "Remedial" ||
+        activeSummativeFilter === "All" ||
+        slot.summative === activeSummativeFilter;
       const matchesGrade = selectedGradeFilter === "All" || item.gradeLevel === selectedGradeFilter;
       const searchTarget = `${item.prompt} ${item.unitTitle ?? ""} ${item.gradeLevel} ${item.optionA} ${item.optionB} ${item.optionC} ${item.optionD}`.toLowerCase();
       const matchesQuery = !q.trim() || searchTarget.includes(q.toLowerCase());
-      return matchesQuarter && matchesGrade && matchesQuery;
+      return matchesTerm && matchesSummative && matchesGrade && matchesQuery;
     });
-  }, [items, activeQuarterTab, selectedGradeFilter, q]);
+  }, [items, activeTermTab, activeSummativeFilter, selectedGradeFilter, q]);
 
-  // Real-time capacity check for the modal form's selected quarter (Limit: 10)
+  // Real-time capacity check for the modal form's selected slot (Limit: 10)
+  const currentFormSlotLabel = form.selectedTerm === "Remedial" ? "Remedial" : `${form.selectedTerm} - ${form.selectedSummative}`;
   const selectedQuarterCount = useMemo(() => {
     return items.filter(
-      (i) => (i.quarter || "Quarter 1") === form.quarter && (!edit || i.id !== edit.id)
+      (i) => parseQuarterSlot(i.quarter).label === currentFormSlotLabel && (!edit || i.id !== edit.id)
     ).length;
-  }, [items, form.quarter, edit]);
+  }, [items, currentFormSlotLabel, edit]);
 
-  const isQuarterOverLimit = (!edit || edit.quarter !== form.quarter) && selectedQuarterCount >= 10;
+  const isQuarterOverLimit = selectedQuarterCount >= 10;
 
   // Quarter Badge Colors
   const getQuarterBadge = (quarter?: string | null) => {
-    const q = quarter || "Quarter 1";
-    switch (q) {
-      case "Quarter 1":
-        return { label: "Quarter 1", bg: "bg-sky-500/15 text-sky-300 border-sky-500/30", icon: "🌱" };
-      case "Quarter 2":
-        return { label: "Quarter 2", bg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: "🌿" };
-      case "Quarter 3":
-        return { label: "Quarter 3", bg: "bg-amber-500/15 text-amber-300 border-amber-500/30", icon: "🌻" };
-      case "Summative":
-        return { label: "Summative", bg: "bg-fuchsia-500/20 text-fuchsia-200 border-fuchsia-500/40", icon: "🏆" };
+    const slot = parseQuarterSlot(quarter);
+    if (slot.isRemedial) {
+      return { label: "Remedial", bg: "bg-fuchsia-500/20 text-fuchsia-200 border-fuchsia-500/40", icon: "💧" };
+    }
+    switch (slot.term) {
+      case "Term 1":
+        return { label: slot.label, bg: "bg-sky-500/15 text-sky-300 border-sky-500/30", icon: "🌱" };
+      case "Term 2":
+        return { label: slot.label, bg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: "🌿" };
+      case "Term 3":
+        return { label: slot.label, bg: "bg-amber-500/15 text-amber-300 border-amber-500/30", icon: "🌻" };
       default:
-        return { label: q, bg: "bg-slate-700 text-slate-200 border-slate-600", icon: "📘" };
+        return { label: slot.label, bg: "bg-slate-700 text-slate-200 border-slate-600", icon: "📘" };
     }
   };
 
@@ -310,198 +385,293 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
             </button>
           </div>
 
-          {/* Quick Quarter Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* Quick Term & Summative Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {/* Term 1 Card */}
             <div
-              onClick={() => setActiveQuarterTab("Quarter 1")}
-              className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 1"
+              onClick={() => { setActiveTermTab("Term 1"); setActiveSummativeFilter("All"); }}
+              className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+                activeTermTab === "Term 1"
                   ? "bg-sky-500/20 border-sky-400/50 shadow-lg shadow-sky-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Quarter 1</span>
-                <span className="text-lg">🌱</span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-white">
-                  {stats.q1} <span className="text-xs font-normal text-slate-400">/ 10</span>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Term 1</span>
+                  <span className="text-lg">🌱</span>
                 </div>
-                {stats.q1 >= 10 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Full
-                  </span>
-                )}
+                <div className="flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-white">
+                    {stats.t1Total} <span className="text-xs font-normal text-slate-400">/ 40</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Foundation & Numbers</p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Foundation & Numbers</p>
+
+              {/* Summative Slot Capacity Pills */}
+              <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/10">
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">1st</div>
+                  <div className={`text-xs font-bold ${stats.t1_s1 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t1_s1}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">2nd</div>
+                  <div className={`text-xs font-bold ${stats.t1_s2 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t1_s2}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">3rd</div>
+                  <div className={`text-xs font-bold ${stats.t1_s3 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t1_s3}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">4th</div>
+                  <div className={`text-xs font-bold ${stats.t1_s4 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t1_s4}/10</div>
+                </div>
+              </div>
             </div>
 
+            {/* Term 2 Card */}
             <div
-              onClick={() => setActiveQuarterTab("Quarter 2")}
-              className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 2"
+              onClick={() => { setActiveTermTab("Term 2"); setActiveSummativeFilter("All"); }}
+              className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+                activeTermTab === "Term 2"
                   ? "bg-emerald-500/20 border-emerald-400/50 shadow-lg shadow-emerald-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Quarter 2</span>
-                <span className="text-lg">🌿</span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-white">
-                  {stats.q2} <span className="text-xs font-normal text-slate-400">/ 10</span>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Term 2</span>
+                  <span className="text-lg">🌿</span>
                 </div>
-                {stats.q2 >= 10 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Full
-                  </span>
-                )}
+                <div className="flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-white">
+                    {stats.t2Total} <span className="text-xs font-normal text-slate-400">/ 40</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Operations & Patterns</p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Operations & Patterns</p>
+
+              {/* Summative Slot Capacity Pills */}
+              <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/10">
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">1st</div>
+                  <div className={`text-xs font-bold ${stats.t2_s1 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t2_s1}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">2nd</div>
+                  <div className={`text-xs font-bold ${stats.t2_s2 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t2_s2}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">3rd</div>
+                  <div className={`text-xs font-bold ${stats.t2_s3 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t2_s3}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">4th</div>
+                  <div className={`text-xs font-bold ${stats.t2_s4 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t2_s4}/10</div>
+                </div>
+              </div>
             </div>
 
+            {/* Term 3 Card */}
             <div
-              onClick={() => setActiveQuarterTab("Quarter 3")}
-              className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Quarter 3"
+              onClick={() => { setActiveTermTab("Term 3"); setActiveSummativeFilter("All"); }}
+              className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+                activeTermTab === "Term 3"
                   ? "bg-amber-500/20 border-amber-400/50 shadow-lg shadow-amber-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Quarter 3</span>
-                <span className="text-lg">🌻</span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-white">
-                  {stats.q3} <span className="text-xs font-normal text-slate-400">/ 10</span>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Term 3</span>
+                  <span className="text-lg">🌻</span>
                 </div>
-                {stats.q3 >= 10 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Full
-                  </span>
-                )}
+                <div className="flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-white">
+                    {stats.t3Total} <span className="text-xs font-normal text-slate-400">/ 40</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Geometry & Data</p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Geometry & Data</p>
+
+              {/* Summative Slot Capacity Pills */}
+              <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/10">
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">1st</div>
+                  <div className={`text-xs font-bold ${stats.t3_s1 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t3_s1}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">2nd</div>
+                  <div className={`text-xs font-bold ${stats.t3_s2 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t3_s2}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">3rd</div>
+                  <div className={`text-xs font-bold ${stats.t3_s3 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t3_s3}/10</div>
+                </div>
+                <div className="text-center p-1 rounded-lg bg-white/5">
+                  <div className="text-[10px] text-slate-400">4th</div>
+                  <div className={`text-xs font-bold ${stats.t3_s4 >= 10 ? "text-amber-400" : "text-slate-200"}`}>{stats.t3_s4}/10</div>
+                </div>
+              </div>
             </div>
 
+            {/* Remedial Card */}
             <div
-              onClick={() => setActiveQuarterTab("Summative")}
-              className={`p-4 rounded-2xl border transition cursor-pointer ${
-                activeQuarterTab === "Summative"
+              onClick={() => { setActiveTermTab("Remedial"); setActiveSummativeFilter("All"); }}
+              className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+                activeTermTab === "Remedial"
                   ? "bg-fuchsia-500/25 border-fuchsia-400/50 shadow-lg shadow-fuchsia-950/50"
                   : "bg-white/5 border-white/10 hover:bg-white/10"
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Summative</span>
-                <span className="text-lg">🏆</span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-2xl font-black text-white">
-                  {stats.summative} <span className="text-xs font-normal text-slate-400">/ 10</span>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Remedial</span>
+                  <span className="text-lg">💧</span>
                 </div>
-                {stats.summative >= 10 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Full
-                  </span>
-                )}
+                <div className="flex items-baseline justify-between">
+                  <div className="text-2xl font-black text-white">
+                    {stats.remedialTotal} <span className="text-xs font-normal text-slate-400">/ 10</span>
+                  </div>
+                  {stats.remedialTotal >= 10 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      Full
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Targeted Review for Missed Questions</p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Comprehensive Exam</p>
+              <div className="mt-3 pt-3 border-t border-white/10 text-[11px] text-slate-400">
+                Pulls dynamic mistakes from Terms 1–3
+              </div>
             </div>
           </div>
 
-          {/* Quarter Tabs Filter Navigation */}
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-2 border-b border-white/10">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setActiveQuarterTab("All")}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "All"
-                    ? "bg-white text-slate-950 shadow-md"
-                    : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <Layers size={14} /> All Quarters
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 font-mono">
-                  {stats.total}
-                </span>
-              </button>
+          {/* Two-Row Filter Navigation */}
+          <div className="space-y-3 mb-6 pb-2 border-b border-white/10">
+            {/* Row 1: Terms */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setActiveTermTab("All")}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+                    activeTermTab === "All"
+                      ? "bg-white text-slate-950 shadow-md"
+                      : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <Layers size={14} /> All Terms
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 font-mono">
+                    {stats.total}
+                  </span>
+                </button>
 
-              <button
-                onClick={() => setActiveQuarterTab("Quarter 1")}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 1"
-                    ? "bg-sky-500 text-slate-950 shadow-md font-extrabold"
-                    : "bg-white/5 text-slate-300 hover:bg-sky-500/10 hover:text-sky-300"
-                }`}
-              >
-                🌱 Quarter 1
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-sky-200 font-mono">
-                  {stats.q1}
-                </span>
-              </button>
+                <button
+                  onClick={() => setActiveTermTab("Term 1")}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+                    activeTermTab === "Term 1"
+                      ? "bg-sky-500 text-slate-950 shadow-md font-extrabold"
+                      : "bg-white/5 text-slate-300 hover:bg-sky-500/10 hover:text-sky-300"
+                  }`}
+                >
+                  🌱 Term 1
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-sky-200 font-mono">
+                    {stats.t1Total}
+                  </span>
+                </button>
 
-              <button
-                onClick={() => setActiveQuarterTab("Quarter 2")}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 2"
-                    ? "bg-emerald-500 text-slate-950 shadow-md font-extrabold"
-                    : "bg-white/5 text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-300"
-                }`}
-              >
-                🌿 Quarter 2
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-emerald-200 font-mono">
-                  {stats.q2}
-                </span>
-              </button>
+                <button
+                  onClick={() => setActiveTermTab("Term 2")}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+                    activeTermTab === "Term 2"
+                      ? "bg-emerald-500 text-slate-950 shadow-md font-extrabold"
+                      : "bg-white/5 text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-300"
+                  }`}
+                >
+                  🌿 Term 2
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-emerald-200 font-mono">
+                    {stats.t2Total}
+                  </span>
+                </button>
 
-              <button
-                onClick={() => setActiveQuarterTab("Quarter 3")}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Quarter 3"
-                    ? "bg-amber-500 text-slate-950 shadow-md font-extrabold"
-                    : "bg-white/5 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300"
-                }`}
-              >
-                🌻 Quarter 3
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-amber-200 font-mono">
-                  {stats.q3}
-                </span>
-              </button>
+                <button
+                  onClick={() => setActiveTermTab("Term 3")}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+                    activeTermTab === "Term 3"
+                      ? "bg-amber-500 text-slate-950 shadow-md font-extrabold"
+                      : "bg-white/5 text-slate-300 hover:bg-amber-500/10 hover:text-amber-300"
+                  }`}
+                >
+                  🌻 Term 3
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-amber-200 font-mono">
+                    {stats.t3Total}
+                  </span>
+                </button>
 
-              <button
-                onClick={() => setActiveQuarterTab("Summative")}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
-                  activeQuarterTab === "Summative"
-                    ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-md font-extrabold"
-                    : "bg-white/5 text-slate-300 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
-                }`}
-              >
-                🏆 Summative Exam
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-fuchsia-200 font-mono">
-                  {stats.summative}
+                <button
+                  onClick={() => { setActiveTermTab("Remedial"); setActiveSummativeFilter("All"); }}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+                    activeTermTab === "Remedial"
+                      ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-md font-extrabold"
+                      : "bg-white/5 text-slate-300 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                  }`}
+                >
+                  💧 Remedial
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800/80 text-fuchsia-200 font-mono">
+                    {stats.remedialTotal}
+                  </span>
+                </button>
+              </div>
+
+              {/* Grade Level Dropdown Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                  <Filter size={12} /> Grade:
                 </span>
-              </button>
+                <select
+                  value={selectedGradeFilter}
+                  onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400/40 cursor-pointer"
+                >
+                  <option value="All" className="bg-slate-900">All Grades</option>
+                  <option value="Grade 1" className="bg-slate-900">Grade 1</option>
+                  <option value="Grade 2" className="bg-slate-900">Grade 2</option>
+                </select>
+              </div>
             </div>
 
-            {/* Grade Level Dropdown Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                <Filter size={12} /> Grade:
-              </span>
-              <select
-                value={selectedGradeFilter}
-                onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400/40 cursor-pointer"
-              >
-                <option value="All" className="bg-slate-900">All Grades</option>
-                <option value="Grade 1" className="bg-slate-900">Grade 1</option>
-                <option value="Grade 2" className="bg-slate-900">Grade 2</option>
-              </select>
-            </div>
+            {/* Row 2: Summative Test Filter (Visible for Terms 1-3 or All) */}
+            {activeTermTab !== "Remedial" && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-xs font-semibold text-slate-400">Summative:</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={() => setActiveSummativeFilter("All")}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      activeSummativeFilter === "All"
+                        ? "bg-violet-600 text-white"
+                        : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    All Tests
+                  </button>
+                  {SUMMATIVES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setActiveSummativeFilter(s)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        activeSummativeFilter === s
+                          ? "bg-violet-600 text-white"
+                          : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Search bar */}
@@ -599,16 +769,16 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
             <div className="text-center py-20 glass-card rounded-3xl border border-white/10">
               <BrainCircuit size={48} className="mx-auto text-slate-600 mb-4" />
               <h3 className="text-xl font-extrabold text-white mb-2">
-                No questions found for {activeQuarterTab === "All" ? "your filter" : activeQuarterTab}
+                No questions found for {activeTermTab === "All" ? "your filter" : activeTermTab}
               </h3>
               <p className="text-slate-400 mb-6 max-w-md mx-auto text-sm">
-                Add curriculum questions to this quarter to feed the student learning game.
+                Add curriculum questions to this slot to feed the student learning game.
               </p>
               <button
                 onClick={handleOpenAdd}
                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold hover:brightness-110 transition cursor-pointer"
               >
-                Add Question to {activeQuarterTab === "All" ? "Question Bank" : activeQuarterTab}
+                Add Question to {activeTermTab === "All" ? "Question Bank" : activeTermTab}
               </button>
             </div>
           ) : (
@@ -731,11 +901,11 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                       {edit ? "Edit Question" : "New Curriculum Question"}
                     </h2>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Assign to Quarter 1, Quarter 2, Quarter 3, or Summative Exam to feed the game.
+                      Assign to Term 1–3 Summatives or Remedial Stage to feed the game.
                     </p>
                   </div>
                   <span className="text-2xl">
-                    {form.quarter === "Quarter 1" ? "🌱" : form.quarter === "Quarter 2" ? "🌿" : form.quarter === "Quarter 3" ? "🌻" : "🏆"}
+                    {form.selectedTerm === "Term 1" ? "🌱" : form.selectedTerm === "Term 2" ? "🌿" : form.selectedTerm === "Term 3" ? "🌻" : "💧"}
                   </span>
                 </div>
 
@@ -747,38 +917,75 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
 
                 <div className="space-y-4">
                   
-                  {/* Quarter & Grade Level */}
+                  {/* Term & Summative Selectors */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Quarter Period <span className="text-rose-400">*</span>
+                        Term / Stage <span className="text-rose-400">*</span>
                       </label>
                       <select
-                        value={form.quarter}
-                        onChange={(e) => setForm({ ...form, quarter: e.target.value as QuarterType })}
+                        value={form.selectedTerm}
+                        onChange={(e) => setForm({ ...form, selectedTerm: e.target.value as TermType })}
                         className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white cursor-pointer font-medium"
                       >
-                        <option value="Quarter 1" className="bg-slate-900 text-white">🌱 Quarter 1</option>
-                        <option value="Quarter 2" className="bg-slate-900 text-white">🌿 Quarter 2</option>
-                        <option value="Quarter 3" className="bg-slate-900 text-white">🌻 Quarter 3</option>
-                        <option value="Summative" className="bg-slate-900 text-white">🏆 Summative Assessment</option>
+                        <option value="Term 1" className="bg-slate-900 text-white">🌱 Term 1</option>
+                        <option value="Term 2" className="bg-slate-900 text-white">🌿 Term 2</option>
+                        <option value="Term 3" className="bg-slate-900 text-white">🌻 Term 3</option>
+                        <option value="Remedial" className="bg-slate-900 text-white">💧 Remedial Stage</option>
                       </select>
-                      <div className="mt-1.5 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400">Quarter capacity:</span>
-                        <span className={`font-semibold ${selectedQuarterCount >= 10 ? "text-rose-400 font-bold" : "text-slate-300"}`}>
-                          {selectedQuarterCount} / 10 questions {selectedQuarterCount >= 10 ? "(Limit Reached)" : ""}
-                        </span>
-                      </div>
-                      {isQuarterOverLimit && (
-                        <div className="mt-2 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-2 text-rose-200 text-xs">
-                          <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
-                          <span>
-                            <strong>Limit Reached:</strong> {form.quarter} already contains 10 questions. You cannot exceed 10 questions for this quarter.
-                          </span>
-                        </div>
-                      )}
                     </div>
 
+                    {form.selectedTerm !== "Remedial" ? (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Summative Test Slot <span className="text-rose-400">*</span>
+                        </label>
+                        <select
+                          value={form.selectedSummative}
+                          onChange={(e) => setForm({ ...form, selectedSummative: e.target.value as SummativeType })}
+                          className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white cursor-pointer font-medium"
+                        >
+                          <option value="1st Summative" className="bg-slate-900 text-white">1st Summative</option>
+                          <option value="2nd Summative" className="bg-slate-900 text-white">2nd Summative</option>
+                          <option value="3rd Summative" className="bg-slate-900 text-white">3rd Summative</option>
+                          <option value="4th Summative" className="bg-slate-900 text-white">4th Summative</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Remedial Target
+                        </label>
+                        <div className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-xs text-fuchsia-300 font-semibold">
+                          💧 Dynamic Missed-Items Review
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Real-time Slot Capacity Meter */}
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400 font-medium">Slot Capacity ({currentFormSlotLabel}):</span>
+                      <span className={`font-bold ${selectedQuarterCount >= 10 ? "text-rose-400" : "text-emerald-300"}`}>
+                        {selectedQuarterCount} / 10 questions {selectedQuarterCount >= 10 ? "(Slot Full)" : ""}
+                      </span>
+                    </div>
+                    {isQuarterOverLimit && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-2 text-rose-200 text-xs">
+                        <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong>Limit Reached:</strong> {currentFormSlotLabel} already contains 10 questions. You cannot exceed 10 questions for this slot.
+                        </span>
+                      </div>
+                    )}
+                    <div className="text-[11px] text-slate-400 mt-1">
+                      💡 Tip: In the game, tests unlock in order (1st → 2nd → 3rd → 4th). Add questions to 1st Summative first for best flow.
+                    </div>
+                  </div>
+
+                  {/* Grade Level */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
                         Grade Level <span className="text-rose-400">*</span>
@@ -926,7 +1133,7 @@ export default function QuestionsInteractive({ userName, role }: { userName: str
                         : "bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 text-white shadow-violet-900/40 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                     }`}
                   >
-                    {edit ? "Save Changes" : isQuarterOverLimit ? "Limit Reached (10/10)" : `Create for ${form.quarter}`}
+                    {edit ? "Save Changes" : isQuarterOverLimit ? "Limit Reached (10/10)" : `Create for ${currentFormSlotLabel}`}
                   </button>
                 </div>
               </div>

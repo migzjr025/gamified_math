@@ -184,7 +184,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const resolvedStudentId = targetStudent.length > 0 ? targetStudent[0].id : rawStudentId;
+    if (targetStudent.length === 0) {
+      return NextResponse.json(
+        { error: "Unregistered Student: Student profile does not exist in teacher's roster" },
+        { status: 404 }
+      );
+    }
+
+    const resolvedStudentId = targetStudent[0].id;
     const effectiveUserId = targetStudent[0]?.userId || sessionUser?.id || 1;
 
     const score = Number.isFinite(Number(body.score)) ? Math.max(0, Math.min(100, Number(body.score))) : 0;
@@ -397,7 +404,23 @@ export async function DELETE(req: NextRequest) {
       const ids = rawIds.map(Number).filter((n) => !isNaN(n) && n > 0);
       if (ids.length > 0) {
         try {
+          const targetGrades = await db
+            .select({ studentId: grades.studentId, assessmentId: grades.assessmentId })
+            .from(grades)
+            .where(inArray(grades.id, ids));
+
           await db.delete(grades).where(inArray(grades.id, ids));
+
+          for (const tg of targetGrades) {
+            if (tg.studentId && tg.assessmentId) {
+              await db.delete(gameResults).where(
+                and(
+                  eq(gameResults.studentId, tg.studentId),
+                  eq(gameResults.assessmentId, tg.assessmentId)
+                )
+              );
+            }
+          }
         } catch (err) {
           console.warn("Grades bulk delete by ids error:", err);
         }

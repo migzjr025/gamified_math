@@ -178,18 +178,18 @@ function findStudentForGrade(
   return undefined;
 }
 
-function categorizeGradeQuarter(title?: string | null, quarter?: string | null): "Quarter 1" | "Quarter 2" | "Quarter 3" | "Summative" | null {
+function categorizeGradePeriod(title?: string | null, quarter?: string | null): "Term 1" | "Term 2" | "Term 3" | "Remedial" | null {
   const qStr = String(quarter || "").trim().toLowerCase();
-  if (qStr === "summative" || qStr.includes("summative") || qStr === "final") return "Summative";
-  if (qStr.includes("1") || qStr === "quarter 1") return "Quarter 1";
-  if (qStr.includes("2") || qStr === "quarter 2") return "Quarter 2";
-  if (qStr.includes("3") || qStr === "quarter 3") return "Quarter 3";
+  if (qStr === "remedial" || qStr.includes("remedial") || qStr === "summative" || qStr.includes("water temple")) return "Remedial";
+  if (qStr.includes("term 1") || qStr.includes("quarter 1") || qStr.includes("t1")) return "Term 1";
+  if (qStr.includes("term 2") || qStr.includes("quarter 2") || qStr.includes("t2")) return "Term 2";
+  if (qStr.includes("term 3") || qStr.includes("quarter 3") || qStr.includes("t3")) return "Term 3";
 
   const t = String(title || "").toLowerCase();
-  if (t.includes("summative") || t.includes("water temple") || t.includes("final")) return "Summative";
-  if (t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return "Quarter 1";
-  if (t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return "Quarter 2";
-  if (t.includes("quarter 3") || t.includes("q3") || t.includes("unit 3")) return "Quarter 3";
+  if (t.includes("remedial") || t.includes("water temple") || t.includes("summative assessment")) return "Remedial";
+  if (t.includes("term 1") || t.includes("quarter 1") || t.includes("q1") || t.includes("unit 1")) return "Term 1";
+  if (t.includes("term 2") || t.includes("quarter 2") || t.includes("q2") || t.includes("unit 2")) return "Term 2";
+  if (t.includes("term 3") || t.includes("quarter 3") || t.includes("q3") || t.includes("unit 3")) return "Term 3";
 
   return null;
 }
@@ -442,7 +442,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         createdAt?: string | null;
       }> = await response.json();
 
-      // Map: student.id -> Map<"Quarter 1" | "Quarter 2" | "Quarter 3" | "Summative", number[]>
+      // Map: student.id -> Map<"Term 1" | "Term 2" | "Term 3" | "Remedial", number[]>
       const studentQuarterScores = new Map<number, Map<string, number[]>>();
       const allStudentScores = new Map<number, number[]>();
 
@@ -450,7 +450,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         const student = findStudentForGrade(grade, items);
         if (!student) continue;
 
-        const period = categorizeGradeQuarter(grade.assessmentTitle, grade.quarter);
+        const period = categorizeGradePeriod(grade.assessmentTitle, grade.quarter);
         if (!period) continue;
 
         const byQuarter = studentQuarterScores.get(student.id) ?? new Map<string, number[]>();
@@ -459,9 +459,12 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         byQuarter.set(period, scores);
         studentQuarterScores.set(student.id, byQuarter);
 
-        const allScores = allStudentScores.get(student.id) ?? [];
-        allScores.push(Number(grade.score));
-        allStudentScores.set(student.id, allScores);
+        // Official terms count towards general average
+        if (period !== "Remedial") {
+          const allScores = allStudentScores.get(student.id) ?? [];
+          allScores.push(Number(grade.score));
+          allStudentScores.set(student.id, allScores);
+        }
       }
 
       const summaryRows = items.map((student) => {
@@ -474,10 +477,10 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           return list.length ? Number((list.reduce((sum, v) => sum + v, 0) / list.length).toFixed(1)) : null;
         };
 
-        const q1Avg = getAvg("Quarter 1");
-        const q2Avg = getAvg("Quarter 2");
-        const q3Avg = getAvg("Quarter 3");
-        const summativeAvg = getAvg("Summative");
+        const t1Avg = getAvg("Term 1");
+        const t2Avg = getAvg("Term 2");
+        const t3Avg = getAvg("Term 3");
+        const remedialAvg = getAvg("Remedial");
 
         const generalAvg = allScores.length
           ? Number((allScores.reduce((sum, v) => sum + v, 0) / allScores.length).toFixed(1))
@@ -498,10 +501,10 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           Grade: student.gradeLevel,
           Section: student.section,
           "Student ID": student.studentId,
-          "Quarter 1 Score (%)": q1Avg !== null ? q1Avg : "—",
-          "Quarter 2 Score (%)": q2Avg !== null ? q2Avg : "—",
-          "Quarter 3 Score (%)": q3Avg !== null ? q3Avg : "—",
-          "Summative Assessment (%)": summativeAvg !== null ? summativeAvg : "—",
+          "Term 1 Score (%)": t1Avg !== null ? t1Avg : "—",
+          "Term 2 Score (%)": t2Avg !== null ? t2Avg : "—",
+          "Term 3 Score (%)": t3Avg !== null ? t3Avg : "—",
+          "Remedial (%)": remedialAvg !== null ? remedialAvg : "—",
           "Average Score (%)": generalAvg !== null ? generalAvg : "—",
           "Evaluation Status": status,
         };
@@ -510,10 +513,10 @@ export default function StudentsClient({ userName, role }: { userName: string; r
       const reportRows = gradeRows.map((grade) => {
         const student = findStudentForGrade(grade, items);
         const resolvedAge = student?.age ?? calculateAge(student?.birthday);
-        const period = categorizeGradeQuarter(grade.assessmentTitle, grade.quarter);
-        const displayQuarter = period === "Summative"
-          ? "Summative Assessment"
-          : (period || grade.quarter || "Assessment");
+        const period = categorizeGradePeriod(grade.assessmentTitle, grade.quarter);
+        const displayPeriod = period === "Remedial"
+          ? "Remedial Stage"
+          : (grade.quarter || period || "Assessment");
 
         return {
           Name: student?.fullName ?? grade.studentName ?? "Unknown Student",
@@ -523,7 +526,7 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           Gender: student?.gender ?? "",
           Grade: student?.gradeLevel ?? "Grade 2",
           Section: student?.section ?? "A",
-          Period: displayQuarter,
+          Period: displayPeriod,
           Assessment: grade.assessmentTitle ?? "Quiz",
           "Score (%)": Number(grade.score),
           "Date Recorded": grade.createdAt ? new Date(grade.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—",
@@ -543,10 +546,10 @@ export default function StudentsClient({ userName, role }: { userName: string; r
           "Grade",
           "Section",
           "Student ID",
-          "Quarter 1 Score (%)",
-          "Quarter 2 Score (%)",
-          "Quarter 3 Score (%)",
-          "Summative Assessment (%)",
+          "Term 1 Score (%)",
+          "Term 2 Score (%)",
+          "Term 3 Score (%)",
+          "Remedial (%)",
           "Average Score (%)",
           "Evaluation Status",
         ],
@@ -596,9 +599,9 @@ export default function StudentsClient({ userName, role }: { userName: string; r
         { wch: 12 },
         { wch: 60 },
       ];
-      XLSX.utils.book_append_sheet(workbook, wsReport, "Quarterly Report");
+      XLSX.utils.book_append_sheet(workbook, wsReport, "Term Report");
 
-      XLSX.writeFile(workbook, "student-quarterly-report.xlsx");
+      XLSX.writeFile(workbook, "student-term-report.xlsx");
     } catch (error) {
       console.error("Excel export failed", error);
       setImportMessage({ type: "error", text: "The student report could not be exported. Please try again." });

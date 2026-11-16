@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { assessments, units } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -22,21 +22,57 @@ export async function GET() {
         createdAt: assessments.createdAt,
         updatedAt: assessments.updatedAt,
         unitTitle: units.title,
+        quarter: units.quarter,
       })
       .from(assessments)
       .leftJoin(units, eq(assessments.unitId, units.id));
 
-    const data = isAdmin
+    let data = isAdmin
       ? await query
-      : await query.where(eq(assessments.userId, userId));
+      : await query.where(
+          or(
+            eq(assessments.userId, userId),
+            isNull(assessments.userId),
+            eq(assessments.userId, 1)
+          )
+        );
+
+    // Auto-seed canonical assessments if empty
+    if (data.length === 0) {
+      const allUnits = await db.select().from(units);
+      for (const u of allUnits) {
+        const title = u.quarter === "Remedial"
+          ? "Cognitive Maze - Remedial Assessment"
+          : `Cognitive Maze - ${u.quarter}`;
+        try {
+          await db.insert(assessments).values({
+            title,
+            unitId: u.id,
+            type: "quiz",
+            totalPoints: 100,
+            userId: 1,
+          });
+        } catch {}
+      }
+      data = isAdmin
+        ? await query
+        : await query.where(
+            or(
+              eq(assessments.userId, userId),
+              isNull(assessments.userId),
+              eq(assessments.userId, 1)
+            )
+          );
+    }
 
     return NextResponse.json(data);
   } catch (error) {
     console.warn("Assessments DB offline, returning default assessments");
     return NextResponse.json([
-      { id: 1, title: "Unit 1 Quiz - Number Sense", unitId: 1, type: "quiz", totalPoints: 50, unitTitle: "Number and Number Sense" },
-      { id: 2, title: "Unit 2 Activity - Operations", unitId: 2, type: "activity", totalPoints: 40, unitTitle: "Operations and Computations" },
-      { id: 3, title: "Unit 3 Assessment - Fractions", unitId: 3, type: "test", totalPoints: 100, unitTitle: "Fractions and Decimals" },
+      { id: 1, title: "Cognitive Maze - Term 1 1st Summative", unitId: 1, type: "quiz", totalPoints: 100, unitTitle: "Term 1 - 1st Summative Unit", quarter: "Term 1 - 1st Summative" },
+      { id: 2, title: "Cognitive Maze - Term 2 1st Summative", unitId: 5, type: "quiz", totalPoints: 100, unitTitle: "Term 2 - 1st Summative Unit", quarter: "Term 2 - 1st Summative" },
+      { id: 3, title: "Cognitive Maze - Term 3 1st Summative", unitId: 9, type: "quiz", totalPoints: 100, unitTitle: "Term 3 - 1st Summative Unit", quarter: "Term 3 - 1st Summative" },
+      { id: 4, title: "Cognitive Maze - Remedial Assessment", unitId: 13, type: "quiz", totalPoints: 100, unitTitle: "Remedial Unit", quarter: "Remedial" },
     ]);
   }
 }

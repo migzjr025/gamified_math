@@ -30,6 +30,7 @@ interface Student {
 interface Assessment {
   id: number;
   title: string;
+  quarter?: string | null;
 }
 
 export default function GameInteractive({ userName, role }: { userName: string; role?: string }) {
@@ -38,6 +39,8 @@ export default function GameInteractive({ userName, role }: { userName: string; 
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number>(1);
   const [selectedGrade, setSelectedGrade] = useState("Grade 2");
+  const [selectedTerm, setSelectedTerm] = useState<"Term 1" | "Term 2" | "Term 3" | "Remedial">("Term 1");
+  const [selectedSummative, setSelectedSummative] = useState<"1st Summative" | "2nd Summative" | "3rd Summative" | "4th Summative">("1st Summative");
   const [loading, setLoading] = useState(true);
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -81,17 +84,29 @@ export default function GameInteractive({ userName, role }: { userName: string; 
     load();
   }, []);
 
+  const targetPeriod = selectedTerm === "Remedial" ? "Remedial" : `${selectedTerm} - ${selectedSummative}`;
+
   const filteredQuestions = useMemo(() => {
     const list = Array.isArray(questions) ? questions : [];
     return [...list]
-      .filter((question) => question.gradeLevel === selectedGrade && (question as any).isActive !== false)
+      .filter((question) => {
+        const matchesGrade = question.gradeLevel === selectedGrade && (question as any).isActive !== false;
+        const qNorm = String(question.quarter || "").trim();
+        const matchesPeriod =
+          qNorm === targetPeriod ||
+          (targetPeriod.startsWith("Term 1 - 1st") && qNorm === "Quarter 1") ||
+          (targetPeriod.startsWith("Term 2 - 1st") && qNorm === "Quarter 2") ||
+          (targetPeriod.startsWith("Term 3 - 1st") && qNorm === "Quarter 3") ||
+          (targetPeriod === "Remedial" && qNorm === "Summative");
+        return matchesGrade && matchesPeriod;
+      })
       .sort((left, right) => {
         const leftKey = (left.id * 31 + challengeSeed * 17) % 1009;
         const rightKey = (right.id * 31 + challengeSeed * 17) % 1009;
         return leftKey - rightKey;
       })
-      .slice(0, 5);
-  }, [questions, selectedGrade, challengeSeed]);
+      .slice(0, 10);
+  }, [questions, selectedGrade, challengeSeed, targetPeriod]);
 
   const currentQuestion = filteredQuestions[activeQuestionIndex];
 
@@ -103,7 +118,15 @@ export default function GameInteractive({ userName, role }: { userName: string; 
     setSubmitted(true);
 
     try {
-      const assessmentId = assessments[0]?.id ?? 1;
+      const matched = assessments.find((a) => {
+        const titleLower = a.title.toLowerCase();
+        if (selectedTerm === "Remedial") {
+          return titleLower.includes("remedial") || titleLower.includes("water temple") || titleLower.includes("summative assessment");
+        }
+        return titleLower.includes(targetPeriod.toLowerCase()) || titleLower.includes(selectedTerm.toLowerCase());
+      });
+      const assessmentId = matched?.id ?? assessments[0]?.id ?? 1;
+
       const res = await fetch("/api/game-results", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -164,7 +187,7 @@ export default function GameInteractive({ userName, role }: { userName: string; 
           {!submitted ? (
             <>
               <div className="glass-card rounded-3xl p-6 mb-6 shadow-xl border border-white/10">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <div>
                     <label className="block text-xs uppercase tracking-[0.12em] text-slate-400 mb-2">Student</label>
                     <select
@@ -194,10 +217,45 @@ export default function GameInteractive({ userName, role }: { userName: string; 
                     </select>
                   </div>
                   <div>
+                    <label className="block text-xs uppercase tracking-[0.12em] text-slate-400 mb-2">Term / Stage</label>
+                    <select
+                      value={selectedTerm}
+                      onChange={(e) => {
+                        setSelectedTerm(e.target.value as any);
+                        setActiveQuestionIndex(0);
+                        setAnswers({});
+                      }}
+                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white font-medium"
+                    >
+                      <option value="Term 1" className="bg-slate-900">🌱 Term 1</option>
+                      <option value="Term 2" className="bg-slate-900">🌿 Term 2</option>
+                      <option value="Term 3" className="bg-slate-900">🌻 Term 3</option>
+                      <option value="Remedial" className="bg-slate-900">💧 Remedial</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-[0.12em] text-slate-400 mb-2">Summative Test</label>
+                    <select
+                      value={selectedSummative}
+                      disabled={selectedTerm === "Remedial"}
+                      onChange={(e) => {
+                        setSelectedSummative(e.target.value as any);
+                        setActiveQuestionIndex(0);
+                        setAnswers({});
+                      }}
+                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40 text-white font-medium disabled:opacity-40"
+                    >
+                      <option value="1st Summative" className="bg-slate-900">1st Summative</option>
+                      <option value="2nd Summative" className="bg-slate-900">2nd Summative</option>
+                      <option value="3rd Summative" className="bg-slate-900">3rd Summative</option>
+                      <option value="4th Summative" className="bg-slate-900">4th Summative</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-xs uppercase tracking-[0.12em] text-slate-400 mb-2">Questions Ready</label>
                     <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-slate-200">
                       <Target size={16} className="text-violet-300" />
-                      {filteredQuestions.length} Challenge Items
+                      {filteredQuestions.length} Items (Max 10)
                     </div>
                   </div>
                 </div>
